@@ -11,6 +11,27 @@ import time
 import difflib
 import webbrowser
 
+
+# =========================
+# UTILS
+# =========================
+def ensure_dir(path):
+    os.makedirs(path, exist_ok=True)
+
+
+def read_file(path):
+    with open(path, 'r', encoding='utf-8') as f:
+        return f.read()
+
+
+def write_file(path, content):
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(content)
+
+
+# =========================
+# DIFF HTML (UNCHANGED)
+# =========================
 def generate_diff_html(diffs, output_path):
     html_content = """
     <html>
@@ -90,8 +111,7 @@ def generate_diff_html(diffs, output_path):
 
     html_content += "</body></html>"
 
-    with open(output_path, 'w', encoding='utf-8') as f:
-        f.write(html_content)
+    write_file(output_path, html_content)
 
 def print_usage():
     usage_text = """
@@ -129,9 +149,11 @@ def print_usage():
     
     print(usage_text)
 
-def main():
+# =========================
+# ARG PARSER (UNCHANGED LOGIC)
+# =========================
+def parse_args():
     overwrite = False
-
     context_files = []
     context_mode = False
 
@@ -142,13 +164,13 @@ def main():
     if len(sys.argv) < 3:
         print_usage()
         sys.exit(1)
-    
+
     question = sys.argv[1]
-    file_list = []
     raw_args = sys.argv[2:]
 
     cleaned_args = []
     i = 0
+
     while i < len(raw_args):
         if raw_args[i] == "--context":
             context_mode = True
@@ -167,25 +189,15 @@ def main():
 
         i += 1
 
-    file_list = cleaned_args
+    return question, cleaned_args, context_files, overwrite
 
-    current_dir = os.getcwd()
-    HOME_DIR = os.path.expanduser("~")
 
-    BASE_DIR = os.path.join(HOME_DIR, ".deep-insight")
-    os.makedirs(BASE_DIR, exist_ok=True)
-
-    backup_dir = os.path.join(BASE_DIR, "backups")
-    os.makedirs(backup_dir, exist_ok=True)
-
-    report_dir = os.path.join(BASE_DIR, "reports")
-    os.makedirs(report_dir, exist_ok=True)
-
-    profile_dir = os.path.join(BASE_DIR, "chrome-profile")
-    os.makedirs(profile_dir, exist_ok=True)
-    
+# =========================
+# FILE COLLECTION
+# =========================
+def collect_files(file_list, current_dir):
     valid_files = []
-    
+
     for file_name in file_list:
         file_path = os.path.join(current_dir, file_name)
         if os.path.isfile(file_path):
@@ -193,14 +205,18 @@ def main():
             print(f"✅ File found: {file_name}")
         else:
             print(f"⚠️ File does not exist: {file_name}")
-    
+
     if not valid_files:
         print("❌ No valid files found!")
         sys.exit(1)
-    
-    print(f"\n📝 Your question: {question}")
-    print(f"📁 Number of files: {len(valid_files)}")
-    
+
+    return valid_files
+
+
+# =========================
+# PROMPT BUILDER
+# =========================
+def build_prompt(question, context_files, valid_files, current_dir):
     full_question = f"""{question}
 
 No explanation, just final code. With given files order. Do not change or modify context files.
@@ -210,157 +226,207 @@ No explanation, just final code. With given files order. Do not change or modify
         file_path = os.path.join(current_dir, file_name)
         if os.path.isfile(file_path):
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                    full_question += f"\n[CONTEXT FILE: {file_name}]\n{content}\n"
+                content = read_file(file_path)
+                full_question += f"\n[CONTEXT FILE: {file_name}]\n{content}\n"
             except Exception as e:
                 full_question += f"\n⚠️ Error reading context file {file_name}: {str(e)}\n"
 
     for file_name, file_path in valid_files:
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-                full_question += f"\nFile: {file_name}\nContent:\n{content}\n"
+            content = read_file(file_path)
+            full_question += f"\nFile: {file_name}\nContent:\n{content}\n"
         except Exception as e:
             full_question += f"\n⚠️ Error reading file {file_name}: {str(e)}\n"
-    
+
+    return full_question
+
+
+# =========================
+# SELENIUM
+# =========================
+def create_driver(profile_dir):
     CHROMEDRIVER_PATH = "/usr/bin/chromedriver"
-    
-    CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-    PROFILE_DIR = profile_dir
-    
-    if not os.path.exists(PROFILE_DIR):
-        os.makedirs(PROFILE_DIR)
-        print(f"✅ Profile folder created: {PROFILE_DIR}")
-    else:
-        print(f"📁 Using existing profile: {PROFILE_DIR}")
-    
+
+    ensure_dir(profile_dir)
+
+    print(f"📁 Using existing profile: {profile_dir}")
+
     print("🚀 Launching browser...")
-    
+
     options = webdriver.ChromeOptions()
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    options.add_argument(f'--user-data-dir={PROFILE_DIR}')
-    
+    options.add_argument(f'--user-data-dir={profile_dir}')
+
     service = Service(executable_path=CHROMEDRIVER_PATH)
-    driver = webdriver.Chrome(service=service, options=options)
-    
-    try:
-        print("📄 Opening DeepSeek...")
-        driver.get("https://chat.deepseek.com/")
-        
-        wait = WebDriverWait(driver, 600)
-        wait.until(EC.presence_of_element_located((By.TAG_NAME, "textarea")))
-        print("✅ Page is ready!")
-        
-        textarea = driver.find_element(By.TAG_NAME, "textarea")
-        textarea.send_keys(" ")
-        time.sleep(1)
-        driver.execute_script("arguments[0].value = arguments[1];", textarea, full_question)
-        time.sleep(1)
-        textarea.send_keys(" ")
-        print("✅ Question and file content sent")
+    return webdriver.Chrome(service=service, options=options)
 
+
+def send_prompt(driver, full_question):
+    print("📄 Opening DeepSeek...")
+    driver.get("https://chat.deepseek.com/")
+
+    wait = WebDriverWait(driver, 600)
+    wait.until(EC.presence_of_element_located((By.TAG_NAME, "textarea")))
+    print("✅ Page is ready!")
+
+    textarea = driver.find_element(By.TAG_NAME, "textarea")
+
+    # IMPORTANT: DO NOT REMOVE (original behavior)
+    textarea.send_keys(" ")
+    time.sleep(1)
+    driver.execute_script("arguments[0].value = arguments[1];", textarea, full_question)
+    time.sleep(1)
+    textarea.send_keys(" ")
+
+    print("✅ Question and file content sent")
+
+    send_buttons = driver.find_elements(By.CSS_SELECTOR, "div[role='button']")
+    if send_buttons:
+        send_button = send_buttons[-1]
+        send_button.click()
+        print("📨 Message sent, waiting for response...")
+    else:
+        print("❌ Send button not found!")
+        return False
+
+    wait.until(EC.invisibility_of_element_located((By.CSS_SELECTOR, ".ds-markdown")))
+    time.sleep(1)
+
+    while True:
         send_buttons = driver.find_elements(By.CSS_SELECTOR, "div[role='button']")
-        if send_buttons:
-            send_button = send_buttons[-1]
-            send_button.click()
-            print("📨 Message sent, waiting for response...")
-        else:
-            print("❌ Send button not found!")
-            return
-        
-        wait.until(EC.invisibility_of_element_located((By.CSS_SELECTOR, ".ds-markdown")))
+        send_button = send_buttons[-1]
+        if "ds-icon-button--disabled" in send_button.get_attribute("class"):
+            break
         time.sleep(1)
 
-        while True:
-            send_buttons = driver.find_elements(By.CSS_SELECTOR, "div[role='button']")
-            send_button = send_buttons[-1]
-            if "ds-icon-button--disabled" in send_button.get_attribute("class"):
-                break
-            time.sleep(1)
+    return True
 
-        responses = driver.find_elements(By.CSS_SELECTOR, ".ds-markdown")
-        if responses:
-            import re
-            
-            try:
-                markdown = driver.find_element(By.CSS_SELECTOR, ".ds-markdown")
-                code_blocks = markdown.find_elements(By.CSS_SELECTOR, "pre")
 
-                if code_blocks:
-                    print(f"✅ {len(code_blocks)} code blocks found")
-                    
-                    diffs = []
+# =========================
+# RESPONSE PROCESSING
+# =========================
+def process_response(driver, valid_files, overwrite, backup_dir, report_dir, CURRENT_DIR, question, file_list):
+    responses = driver.find_elements(By.CSS_SELECTOR, ".ds-markdown")
 
-                    for idx, code_block in enumerate(code_blocks):
-                        code_content = code_block.text
-                        
-                        file_name, file_path = valid_files[idx]
+    if not responses:
+        print("❌ No response received")
+        return
 
-                        old_content = ""
-                        if os.path.exists(file_path):
-                            with open(file_path, 'r', encoding='utf-8') as f:
-                                old_content = f.read()
+    try:
+        markdown = driver.find_element(By.CSS_SELECTOR, ".ds-markdown")
+        code_blocks = markdown.find_elements(By.CSS_SELECTOR, "pre")
 
-                        if os.path.exists(file_path):
-                            ts = time.strftime("%Y%m%d%H%M%S")
-                            name, ext = os.path.splitext(file_name)
-                            backup_path = os.path.join(backup_dir, f"{name}_{ts}{ext}")
-                            os.makedirs(os.path.dirname(backup_path), exist_ok=True)
-                            with open(backup_path, 'w', encoding='utf-8') as f:
-                                f.write(old_content)
-                            print(f"🗂 Backup: {backup_path}")
+        if code_blocks:
+            print(f"✅ {len(code_blocks)} code blocks found")
 
-                        if overwrite:
-                            with open(file_path, 'w', encoding='utf-8') as f:
-                                f.write(code_content)
-                            
-                            print(f"  💾 Saved: {file_path} ({len(code_content)} characters)")
-                        else:
-                            diff = list(difflib.unified_diff(
-                                old_content.splitlines(),
-                                code_content.splitlines(),
-                                fromfile='old',
-                                tofile='new',
-                                lineterm=''
-                            ))
-                            diffs.append((file_name, diff))
-                            print(f"⚠️ Diff prepared: {file_name}")
-                    
-                    if not overwrite and diffs:
-                        report_file = os.path.join(report_dir, f"diff_{int(time.time())}.html")
-                        generate_diff_html(diffs, report_file)
-                        print(f"📊 Diff report saved: {report_file}")
-                        webbrowser.open(f"file://{report_file}")
-                    
+            diffs = []
+
+            for idx, code_block in enumerate(code_blocks):
+                code_content = code_block.text
+                file_name, file_path = valid_files[idx]
+
+                old_content = ""
+                if os.path.exists(file_path):
+                    old_content = read_file(file_path)
+
+                if os.path.exists(file_path):
+                    ts = time.strftime("%Y%m%d%H%M%S")
+                    name, ext = os.path.splitext(file_name)
+                    backup_path = os.path.join(backup_dir, f"{name}_{ts}{ext}")
+                    ensure_dir(os.path.dirname(backup_path))
+                    write_file(backup_path, old_content)
+                    print(f"🗂 Backup: {backup_path}")
+
+                if overwrite:
+                    write_file(file_path, code_content)
+                    print(f"  💾 Saved: {file_path} ({len(code_content)} characters)")
                 else:
-                    print("⚠️ No code blocks found in response")
+                    diff = list(difflib.unified_diff(
+                        old_content.splitlines(),
+                        code_content.splitlines(),
+                        fromfile='old',
+                        tofile='new',
+                        lineterm=''
+                    ))
+                    diffs.append((file_name, diff))
+                    print(f"⚠️ Diff prepared: {file_name}")
 
-                    responses = driver.find_elements(By.CSS_SELECTOR, ".ds-markdown")
-                    if responses:
-                        response_text = responses[-1].text
-                        output_file = os.path.join(CURRENT_DIR, f"full_response_{int(time.time())}.txt")
-                        with open(output_file, 'w', encoding='utf-8') as f:
-                            f.write(f"Question: {question}\n")
-                            f.write(f"Files: {', '.join(file_list)}\n")
-                            f.write(f"Full response:\n{response_text}\n")
-                        print(f"💾 Full response saved to {output_file}")
-                        
-            except Exception as e:
-                print(f"❌ Error extracting code: {str(e)}")
+            if not overwrite and diffs:
+                report_file = os.path.join(report_dir, f"diff_{int(time.time())}.html")
+                generate_diff_html(diffs, report_file)
+                print(f"📊 Diff report saved: {report_file}")
+                webbrowser.open(f"file://{report_file}")
 
         else:
-            print("❌ No response received")
-        
-        print(f"💾 History and session saved in: {PROFILE_DIR}")
-        
+            print("⚠️ No code blocks found in response")
+
+            response_text = responses[-1].text
+            output_file = os.path.join(CURRENT_DIR, f"full_response_{int(time.time())}.txt")
+
+            with open(output_file, 'w', encoding='utf-8') as f:
+                f.write(f"Question: {question}\n")
+                f.write(f"Files: {', '.join(file_list)}\n")
+                f.write(f"Full response:\n{response_text}\n")
+
+            print(f"💾 Full response saved to {output_file}")
+
+    except Exception as e:
+        print(f"❌ Error extracting code: {str(e)}")
+
+
+# =========================
+# MAIN
+# =========================
+def main():
+    question, file_list, context_files, overwrite = parse_args()
+
+    current_dir = os.getcwd()
+    HOME_DIR = os.path.expanduser("~")
+
+    BASE_DIR = os.path.join(HOME_DIR, ".deep-insight")
+    backup_dir = os.path.join(BASE_DIR, "backups")
+    report_dir = os.path.join(BASE_DIR, "reports")
+    profile_dir = os.path.join(BASE_DIR, "chrome-profile")
+
+    for d in [BASE_DIR, backup_dir, report_dir, profile_dir]:
+        ensure_dir(d)
+
+    valid_files = collect_files(file_list, current_dir)
+
+    print(f"\n📝 Your question: {question}")
+    print(f"📁 Number of files: {len(valid_files)}")
+
+    full_question = build_prompt(question, context_files, valid_files, current_dir)
+
+    CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+    driver = create_driver(profile_dir)
+
+    try:
+        success = send_prompt(driver, full_question)
+
+        if success:
+            process_response(
+                driver,
+                valid_files,
+                overwrite,
+                backup_dir,
+                report_dir,
+                CURRENT_DIR,
+                question,
+                file_list
+            )
+
+        print(f"💾 History and session saved in: {profile_dir}")
+
     except Exception as e:
         print(f"❌ Error: {str(e)}")
-        
+
     finally:
         driver.quit()
         print("✅ Browser closed - Profile information saved")
+
 
 if __name__ == "__main__":
     main()
