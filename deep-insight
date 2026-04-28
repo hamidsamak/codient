@@ -43,7 +43,6 @@ def generate_diff_html(diffs, output_path):
                 color: #ccc;
             }
 
-            /* 👇 magic part */
             .added::before {
                 content: "+ ";
                 color: #6fff6f;
@@ -94,6 +93,42 @@ def generate_diff_html(diffs, output_path):
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(html_content)
 
+def print_usage():
+    usage_text = """
+╔════════════════════════════════════════════════════════════════╗
+║           🧠 Deep Insight - AI Code Assistant v1.0             ║
+║           Author: Hamid Samak                                  ║
+║           GitHub: https://github.com/hamidsamak/deep-insight   ║
+╚════════════════════════════════════════════════════════════════╝
+
+📖 USAGE:
+    deep-insight <QUESTION> <FILE_1> [FILE_2] ... [OPTIONS]
+
+📋 ARGUMENTS:
+    QUESTION            Your request for the AI
+    FILE_1 [FILE_2...]  Code files to process
+
+⚙️  OPTIONS:
+    --overwrite         Auto-overwrite files (creates backup)
+    --context FILE      Add read-only context file
+    --                  End of context files list
+
+💡 EXAMPLES:
+    # Generate diff report without modifying files:
+    deep-insight "Add error handling" app.py utils.py
+
+    # Auto-overwrite with backup:
+    deep-insight --overwrite "Fix indentation" main.py
+
+    # With context files (read-only):
+    deep-insight "Refactor code" --context example.py -- mycode.py
+
+    # Single file:
+    deep-insight "Optimize this" slow_code.py
+"""
+    
+    print(usage_text)
+
 def main():
     overwrite = False
 
@@ -105,7 +140,7 @@ def main():
         sys.argv.remove("--overwrite")
 
     if len(sys.argv) < 3:
-        print("❌ Usage: deep-insight QUESTION FILE_1 [FILE_2] ... [--overwrite]")
+        print_usage()
         sys.exit(1)
     
     question = sys.argv[1]
