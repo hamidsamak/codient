@@ -1,0 +1,294 @@
+#!/usr/bin/env python3
+
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.service import Service
+import os
+import sys
+import time
+import difflib
+import webbrowser
+
+def generate_diff_html(diffs, output_path):
+    html_content = """
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Deep Insight Diff Report</title>
+        <style>
+            body { font-family: monospace; background: #111; color: #eee; }
+            .file { margin-bottom: 40px; }
+            .filename { font-size: 18px; margin: 10px 0; }
+
+            .line {
+                display: inline-block;
+                white-space: pre;
+                padding-left: 6px;
+                margin: 0;
+            }
+
+            .added {
+                background: #144212;
+                color: #9cff9c;
+            }
+
+            .removed {
+                background: #4a1212;
+                color: #ff9c9c;
+            }
+
+            .same {
+                color: #ccc;
+            }
+
+            /* 👇 magic part */
+            .added::before {
+                content: "+ ";
+                color: #6fff6f;
+                user-select: none;
+            }
+
+            .removed::before {
+                content: "- ";
+                color: #ff6f6f;
+                user-select: none;
+            }
+
+            .same::before {
+                content: "  ";
+                user-select: none;
+            }
+
+            pre {
+                padding: 10px;
+                overflow-x: auto;
+            }
+        </style>
+    </head>
+    <body>
+    <h1>Deep Insight Diff Report</h1>
+    """
+
+    for file_name, diff_lines in diffs:
+        html_content += f"<div class='file'><div class='filename'>{file_name}</div><pre>"
+
+        for line in diff_lines:
+            if line.startswith('+++') or line.startswith('---'):
+                continue
+
+            clean_line = line[1:] if line.startswith(('+', '-')) else line
+
+            if line.startswith('+'):
+                html_content += f"<span class='line added'>{clean_line}</span>\n"
+            elif line.startswith('-'):
+                html_content += f"<span class='line removed'>{clean_line}</span>\n"
+            else:
+                html_content += f"<span class='line same'>{clean_line}</span>\n"
+
+        html_content += "</pre></div>"
+
+    html_content += "</body></html>"
+
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+
+def main():
+    overwrite = False
+
+    if "--overwrite" in sys.argv:
+        overwrite = True
+        sys.argv.remove("--overwrite")
+
+    if len(sys.argv) < 3:
+        print("❌ Usage: deep-insight QUESTION FILE_1 [FILE_2] ... [--overwrite]")
+        sys.exit(1)
+    
+    question = sys.argv[1]
+    file_list = sys.argv[2:]
+    
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    HOME_DIR = os.path.expanduser("~")
+
+    BASE_DIR = os.path.join(HOME_DIR, ".deep-insight")
+    os.makedirs(BASE_DIR, exist_ok=True)
+
+    backup_dir = os.path.join(BASE_DIR, "backups")
+    os.makedirs(backup_dir, exist_ok=True)
+
+    report_dir = os.path.join(BASE_DIR, "reports")
+    os.makedirs(report_dir, exist_ok=True)
+
+    profile_dir = os.path.join(BASE_DIR, "chrome-profile")
+    os.makedirs(profile_dir, exist_ok=True)
+    
+    valid_files = []
+    
+    for file_name in file_list:
+        file_path = os.path.join(current_dir, file_name)
+        if os.path.isfile(file_path):
+            valid_files.append((file_name, file_path))
+            print(f"✅ File found: {file_name}")
+        else:
+            print(f"⚠️ File does not exist: {file_name}")
+    
+    if not valid_files:
+        print("❌ No valid files found!")
+        sys.exit(1)
+    
+    print(f"\n📝 Your question: {question}")
+    print(f"📁 Number of files: {len(valid_files)}")
+    
+    full_question = f"""{question}
+
+No explanation, just final code. With given files order.
+"""
+    
+    for file_name, file_path in valid_files:
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                full_question += f"\nFile: {file_name}\nContent:\n{content}\n"
+        except Exception as e:
+            full_question += f"\n⚠️ Error reading file {file_name}: {str(e)}\n"
+    
+    CHROMEDRIVER_PATH = "/usr/bin/chromedriver"
+    
+    CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+    PROFILE_DIR = profile_dir
+    
+    if not os.path.exists(PROFILE_DIR):
+        os.makedirs(PROFILE_DIR)
+        print(f"✅ Profile folder created: {PROFILE_DIR}")
+    else:
+        print(f"📁 Using existing profile: {PROFILE_DIR}")
+    
+    print("🚀 Launching browser...")
+    
+    options = webdriver.ChromeOptions()
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument(f'--user-data-dir={PROFILE_DIR}')
+    
+    service = Service(executable_path=CHROMEDRIVER_PATH)
+    driver = webdriver.Chrome(service=service, options=options)
+    
+    try:
+        print("📄 Opening DeepSeek...")
+        driver.get("https://chat.deepseek.com/")
+        
+        wait = WebDriverWait(driver, 600)
+        wait.until(EC.presence_of_element_located((By.TAG_NAME, "textarea")))
+        print("✅ Page is ready!")
+        
+        textarea = driver.find_element(By.TAG_NAME, "textarea")
+        textarea.send_keys(" ")
+        time.sleep(1)
+        driver.execute_script("arguments[0].value = arguments[1];", textarea, full_question)
+        time.sleep(1)
+        textarea.send_keys(" ")
+        print("✅ Question and file content sent")
+
+        send_buttons = driver.find_elements(By.CSS_SELECTOR, "div[role='button']")
+        if send_buttons:
+            send_button = send_buttons[-1]
+            send_button.click()
+            print("📨 Message sent, waiting for response...")
+        else:
+            print("❌ Send button not found!")
+            return
+        
+        wait.until(EC.invisibility_of_element_located((By.CSS_SELECTOR, ".ds-markdown")))
+        time.sleep(1)
+
+        while True:
+            send_buttons = driver.find_elements(By.CSS_SELECTOR, "div[role='button']")
+            send_button = send_buttons[-1]
+            if "ds-icon-button--disabled" in send_button.get_attribute("class"):
+                break
+            time.sleep(1)
+
+        responses = driver.find_elements(By.CSS_SELECTOR, ".ds-markdown")
+        if responses:
+            import re
+            
+            try:
+                markdown = driver.find_element(By.CSS_SELECTOR, ".ds-markdown")
+                code_blocks = markdown.find_elements(By.CSS_SELECTOR, "pre")
+
+                if code_blocks:
+                    print(f"✅ {len(code_blocks)} code blocks found")
+                    
+                    diffs = []
+
+                    for idx, code_block in enumerate(code_blocks):
+                        code_content = code_block.text
+                        
+                        file_name, file_path = valid_files[idx]
+
+                        old_content = ""
+                        if os.path.exists(file_path):
+                            with open(file_path, 'r', encoding='utf-8') as f:
+                                old_content = f.read()
+
+                        if os.path.exists(file_path):
+                            ts = time.strftime("%Y%m%d%H%M%S")
+                            name, ext = os.path.splitext(file_name)
+                            backup_path = os.path.join(backup_dir, f"{name}_{ts}{ext}")
+                            with open(backup_path, 'w', encoding='utf-8') as f:
+                                f.write(old_content)
+                            print(f"🗂 Backup: {backup_path}")
+
+                        if overwrite:
+                            with open(file_path, 'w', encoding='utf-8') as f:
+                                f.write(code_content)
+                            
+                            print(f"  💾 Saved: {file_path} ({len(code_content)} characters)")
+                        else:
+                            diff = list(difflib.unified_diff(
+                                old_content.splitlines(),
+                                code_content.splitlines(),
+                                fromfile='old',
+                                tofile='new',
+                                lineterm=''
+                            ))
+                            diffs.append((file_name, diff))
+                            print(f"⚠️ Diff prepared: {file_name}")
+                    
+                    if not overwrite and diffs:
+                        report_file = os.path.join(report_dir, f"diff_{int(time.time())}.html")
+                        generate_diff_html(diffs, report_file)
+                        print(f"📊 Diff report saved: {report_file}")
+                        webbrowser.open(f"file://{report_file}")
+                    
+                else:
+                    print("⚠️ No code blocks found in response")
+
+                    responses = driver.find_elements(By.CSS_SELECTOR, ".ds-markdown")
+                    if responses:
+                        response_text = responses[-1].text
+                        output_file = os.path.join(CURRENT_DIR, f"full_response_{int(time.time())}.txt")
+                        with open(output_file, 'w', encoding='utf-8') as f:
+                            f.write(f"Question: {question}\n")
+                            f.write(f"Files: {', '.join(file_list)}\n")
+                            f.write(f"Full response:\n{response_text}\n")
+                        print(f"💾 Full response saved to {output_file}")
+                        
+            except Exception as e:
+                print(f"❌ Error extracting code: {str(e)}")
+
+        else:
+            print("❌ No response received")
+        
+        print(f"💾 History and session saved in: {PROFILE_DIR}")
+        
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        
+    finally:
+        driver.quit()
+        print("✅ Browser closed - Profile information saved")
+
+if __name__ == "__main__":
+    main()
