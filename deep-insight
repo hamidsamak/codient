@@ -10,11 +10,10 @@ import sys
 import time
 import difflib
 import webbrowser
+import glob
+from datetime import datetime
 
 
-# =========================
-# UTILS
-# =========================
 def ensure_dir(path):
     os.makedirs(path, exist_ok=True)
 
@@ -29,9 +28,85 @@ def write_file(path, content):
         f.write(content)
 
 
-# =========================
-# DIFF HTML (UNCHANGED)
-# =========================
+def show_history(backup_dir, file_name):
+    base_name = os.path.splitext(file_name)[0]
+    ext = os.path.splitext(file_name)[1]
+    pattern = os.path.join(backup_dir, f"{base_name}_*{ext}")
+    backups = glob.glob(pattern)
+    
+    if not backups:
+        print(f"\n❌ No backup versions found for '{file_name}'")
+        return
+    
+    backup_list = []
+    for backup in backups:
+        timestamp_str = backup.replace(backup_dir, "").replace(base_name, "").replace(ext, "").replace("_", "").replace("/", "")
+        if timestamp_str.isdigit() and len(timestamp_str) == 14:
+            try:
+                dt = datetime.strptime(timestamp_str, "%Y%m%d%H%M%S")
+                backup_list.append((dt, timestamp_str, backup))
+            except:
+                continue
+    
+    backup_list.sort(reverse=True)
+    
+    print(f"\n📋 Backup history for '{file_name}':")
+    print("=" * 70)
+    for idx, (dt, ts, path) in enumerate(backup_list, 1):
+        print(f"{idx}. Time: {dt.strftime('%Y-%m-%d %H:%M:%S')} (timestamp: {ts})")
+        print(f"   Path: {path}")
+    print("=" * 70)
+
+
+def rollback_file(backup_dir, file_name, timestamp=None):
+    current_dir = os.getcwd()
+    target_file_path = os.path.join(current_dir, file_name)
+    
+    if not os.path.exists(target_file_path):
+        print(f"❌ File '{file_name}' does not exist in current directory")
+        return False
+    
+    base_name = os.path.splitext(file_name)[0]
+    ext = os.path.splitext(file_name)[1]
+    
+    if timestamp:
+        backup_path = os.path.join(backup_dir, f"{base_name}_{timestamp}{ext}")
+        if os.path.exists(backup_path):
+            current_backup = os.path.join(backup_dir, f"{base_name}_{time.strftime('%Y%m%d%H%M%S')}{ext}")
+            current_content = read_file(target_file_path)
+            write_file(current_backup, current_content)
+            print(f"🗂 Backup of current version: {current_backup}")
+            
+            backup_content = read_file(backup_path)
+            write_file(target_file_path, backup_content)
+            print(f"✅ File '{file_name}' rolled back to version {timestamp}")
+            return True
+        else:
+            print(f"❌ Version with timestamp '{timestamp}' not found for '{file_name}'")
+            return False
+    else:
+        pattern = os.path.join(backup_dir, f"{base_name}_*{ext}")
+        backups = glob.glob(pattern)
+        
+        if not backups:
+            print(f"❌ No backup versions found for '{file_name}'")
+            return False
+        
+        latest_backup = max(backups, key=os.path.getmtime)
+        
+        ts = latest_backup.replace(backup_dir, "").replace(base_name, "").replace(ext, "").replace("_", "").replace("/", "")
+        
+        current_backup = os.path.join(backup_dir, f"{base_name}_{time.strftime('%Y%m%d%H%M%S')}{ext}")
+        current_content = read_file(target_file_path)
+        write_file(current_backup, current_content)
+        print(f"🗂 Backup of current version: {current_backup}")
+        
+        backup_content = read_file(latest_backup)
+        write_file(target_file_path, backup_content)
+        print(f"✅ File '{file_name}' rolled back to latest version (timestamp: {ts})")
+        return True
+
+
 def generate_diff_html(diffs, output_path):
     html_content = """
     <html>
@@ -123,6 +198,8 @@ def print_usage():
 
 📖 USAGE:
     deep-insight <QUESTION> <FILE_1> [FILE_2] ... [OPTIONS]
+    deep-insight --history <FILE>
+    deep-insight --rollback <FILE> [--timestamp YYYYMMDDHHMMSS]
 
 📋 ARGUMENTS:
     QUESTION            Your request for the AI
@@ -134,33 +211,60 @@ def print_usage():
     --debug             Enable debug mode (saves prompt, input, and response HTML)
     --                  End of context files list
 
+🔄 HISTORY & ROLLBACK:
+    --history FILE      Show backup history for a specific file
+    --rollback FILE     Rollback a file to previous version
+    --timestamp TS      Specific timestamp for rollback (default: latest)
+
 💡 EXAMPLES:
-    # Generate diff report without modifying files:
     deep-insight "Add error handling" app.py utils.py
-
-    # Auto-overwrite with backup:
     deep-insight --overwrite "Fix indentation" main.py
-
-    # With context files (read-only):
     deep-insight "Refactor code" --context example.py -- mycode.py
-
-    # Single file:
     deep-insight "Optimize this" slow_code.py
-
-    # Debug mode (saves files to ~/.deep-insight/debug/):
     deep-insight --debug "Add comments" script.py
+    deep-insight --history main.py
+    deep-insight --rollback main.py
+    deep-insight --rollback main.py --timestamp 20231201120000
 """
     
     print(usage_text)
 
-# =========================
-# ARG PARSER (UNCHANGED LOGIC)
-# =========================
+
 def parse_args():
     overwrite = False
     context_files = []
     context_mode = False
     debug = False
+    history_mode = False
+    rollback_mode = False
+    rollback_timestamp = None
+    target_file = None
+
+    if "--history" in sys.argv:
+        history_mode = True
+        history_index = sys.argv.index("--history")
+        if history_index + 1 < len(sys.argv) and not sys.argv[history_index + 1].startswith("--"):
+            target_file = sys.argv[history_index + 1]
+        else:
+            print("❌ Error: Please specify filename after --history")
+            sys.exit(1)
+        return None, None, None, None, None, history_mode, rollback_mode, target_file, None
+    
+    if "--rollback" in sys.argv:
+        rollback_mode = True
+        rollback_index = sys.argv.index("--rollback")
+        if rollback_index + 1 < len(sys.argv) and not sys.argv[rollback_index + 1].startswith("--"):
+            target_file = sys.argv[rollback_index + 1]
+        else:
+            print("❌ Error: Please specify filename after --rollback")
+            sys.exit(1)
+        
+        if "--timestamp" in sys.argv:
+            ts_index = sys.argv.index("--timestamp")
+            if ts_index + 1 < len(sys.argv):
+                rollback_timestamp = sys.argv[ts_index + 1]
+        
+        return None, None, None, None, None, history_mode, rollback_mode, target_file, rollback_timestamp
 
     if "--overwrite" in sys.argv:
         overwrite = True
@@ -198,12 +302,9 @@ def parse_args():
 
         i += 1
 
-    return question, cleaned_args, context_files, overwrite, debug
+    return question, cleaned_args, context_files, overwrite, debug, history_mode, rollback_mode, target_file, rollback_timestamp
 
 
-# =========================
-# FILE COLLECTION
-# =========================
 def collect_files(file_list, current_dir):
     valid_files = []
 
@@ -222,9 +323,6 @@ def collect_files(file_list, current_dir):
     return valid_files
 
 
-# =========================
-# PROMPT BUILDER
-# =========================
 def build_prompt(question, context_files, valid_files, current_dir):
     full_question = f"""{question}
 
@@ -250,9 +348,6 @@ No explanation, just final code. With given files order. Do not change or modify
     return full_question
 
 
-# =========================
-# SELENIUM
-# =========================
 def create_driver(profile_dir):
     CHROMEDRIVER_PATH = "/usr/bin/chromedriver"
 
@@ -325,9 +420,6 @@ def send_prompt(driver, full_question, debug, debug_dir, prompt_text):
     return True
 
 
-# =========================
-# RESPONSE PROCESSING
-# =========================
 def process_response(driver, valid_files, overwrite, backup_dir, report_dir, CURRENT_DIR, question, file_list):
     responses = driver.find_elements(By.CSS_SELECTOR, ".ds-markdown")
 
@@ -397,11 +489,9 @@ def process_response(driver, valid_files, overwrite, backup_dir, report_dir, CUR
         print(f"❌ Error extracting code: {str(e)}")
 
 
-# =========================
-# MAIN
-# =========================
 def main():
-    question, file_list, context_files, overwrite, debug = parse_args()
+    (question, file_list, context_files, overwrite, debug, 
+     history_mode, rollback_mode, target_file, rollback_timestamp) = parse_args()
 
     current_dir = os.getcwd()
     HOME_DIR = os.path.expanduser("~")
@@ -414,6 +504,14 @@ def main():
 
     for d in [BASE_DIR, backup_dir, report_dir, profile_dir, debug_dir]:
         ensure_dir(d)
+
+    if history_mode and target_file:
+        show_history(backup_dir, target_file)
+        return
+    
+    if rollback_mode and target_file:
+        rollback_file(backup_dir, target_file, rollback_timestamp)
+        return
 
     valid_files = collect_files(file_list, current_dir)
 
