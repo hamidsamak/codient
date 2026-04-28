@@ -131,6 +131,7 @@ def print_usage():
 ⚙️  OPTIONS:
     --overwrite         Auto-overwrite files (creates backup)
     --context FILE      Add read-only context file
+    --debug             Enable debug mode (saves prompt, input, and response HTML)
     --                  End of context files list
 
 💡 EXAMPLES:
@@ -145,6 +146,9 @@ def print_usage():
 
     # Single file:
     deep-insight "Optimize this" slow_code.py
+
+    # Debug mode (saves files to ~/.deep-insight/debug/):
+    deep-insight --debug "Add comments" script.py
 """
     
     print(usage_text)
@@ -156,10 +160,15 @@ def parse_args():
     overwrite = False
     context_files = []
     context_mode = False
+    debug = False
 
     if "--overwrite" in sys.argv:
         overwrite = True
         sys.argv.remove("--overwrite")
+
+    if "--debug" in sys.argv:
+        debug = True
+        sys.argv.remove("--debug")
 
     if len(sys.argv) < 3:
         print_usage()
@@ -189,7 +198,7 @@ def parse_args():
 
         i += 1
 
-    return question, cleaned_args, context_files, overwrite
+    return question, cleaned_args, context_files, overwrite, debug
 
 
 # =========================
@@ -262,9 +271,17 @@ def create_driver(profile_dir):
     return webdriver.Chrome(service=service, options=options)
 
 
-def send_prompt(driver, full_question):
+def send_prompt(driver, full_question, debug, debug_dir, prompt_text):
     print("📄 Opening DeepSeek...")
     driver.get("https://chat.deepseek.com/")
+    
+    if debug:
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        debug_file = os.path.join(debug_dir, f"debug_{timestamp}.html")
+        
+        prompt_debug = os.path.join(debug_dir, f"prompt_{timestamp}.txt")
+        write_file(prompt_debug, prompt_text)
+        print(f"🐛 Debug: Prompt saved to {prompt_debug}")
 
     wait = WebDriverWait(driver, 600)
     wait.until(EC.presence_of_element_located((By.TAG_NAME, "textarea")))
@@ -272,7 +289,6 @@ def send_prompt(driver, full_question):
 
     textarea = driver.find_element(By.TAG_NAME, "textarea")
 
-    # IMPORTANT: DO NOT REMOVE (original behavior)
     textarea.send_keys(" ")
     time.sleep(1)
     driver.execute_script("arguments[0].value = arguments[1];", textarea, full_question)
@@ -299,6 +315,12 @@ def send_prompt(driver, full_question):
         if "ds-icon-button--disabled" in send_button.get_attribute("class"):
             break
         time.sleep(1)
+        
+    if debug:
+        page_html = driver.page_source
+        debug_html_file = os.path.join(debug_dir, f"page_{timestamp}.html")
+        write_file(debug_html_file, page_html)
+        print(f"🐛 Debug: HTML page saved to {debug_html_file}")
 
     return True
 
@@ -379,7 +401,7 @@ def process_response(driver, valid_files, overwrite, backup_dir, report_dir, CUR
 # MAIN
 # =========================
 def main():
-    question, file_list, context_files, overwrite = parse_args()
+    question, file_list, context_files, overwrite, debug = parse_args()
 
     current_dir = os.getcwd()
     HOME_DIR = os.path.expanduser("~")
@@ -388,14 +410,18 @@ def main():
     backup_dir = os.path.join(BASE_DIR, "backups")
     report_dir = os.path.join(BASE_DIR, "reports")
     profile_dir = os.path.join(BASE_DIR, "chrome-profile")
+    debug_dir = os.path.join(BASE_DIR, "debug")
 
-    for d in [BASE_DIR, backup_dir, report_dir, profile_dir]:
+    for d in [BASE_DIR, backup_dir, report_dir, profile_dir, debug_dir]:
         ensure_dir(d)
 
     valid_files = collect_files(file_list, current_dir)
 
     print(f"\n📝 Your question: {question}")
     print(f"📁 Number of files: {len(valid_files)}")
+
+    if debug:
+        print("🐛 Debug mode is ENABLED - Saving prompt, input, and response HTML")
 
     full_question = build_prompt(question, context_files, valid_files, current_dir)
 
@@ -404,7 +430,7 @@ def main():
     driver = create_driver(profile_dir)
 
     try:
-        success = send_prompt(driver, full_question)
+        success = send_prompt(driver, full_question, debug, debug_dir, full_question)
 
         if success:
             process_response(
