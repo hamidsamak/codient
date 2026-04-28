@@ -97,6 +97,9 @@ def generate_diff_html(diffs, output_path):
 def main():
     overwrite = False
 
+    context_files = []
+    context_mode = False
+
     if "--overwrite" in sys.argv:
         overwrite = True
         sys.argv.remove("--overwrite")
@@ -106,9 +109,32 @@ def main():
         sys.exit(1)
     
     question = sys.argv[1]
-    file_list = sys.argv[2:]
-    
-    current_dir = os.path.dirname(os.path.abspath(__file__))
+    file_list = []
+    raw_args = sys.argv[2:]
+
+    cleaned_args = []
+    i = 0
+    while i < len(raw_args):
+        if raw_args[i] == "--context":
+            context_mode = True
+            i += 1
+            continue
+
+        if raw_args[i] == "--":
+            context_mode = False
+            i += 1
+            continue
+
+        if context_mode:
+            context_files.append(raw_args[i])
+        else:
+            cleaned_args.append(raw_args[i])
+
+        i += 1
+
+    file_list = cleaned_args
+
+    current_dir = os.getcwd()
     HOME_DIR = os.path.expanduser("~")
 
     BASE_DIR = os.path.join(HOME_DIR, ".deep-insight")
@@ -142,9 +168,19 @@ def main():
     
     full_question = f"""{question}
 
-No explanation, just final code. With given files order.
+No explanation, just final code. With given files order. Do not change or modify context files.
 """
-    
+
+    for file_name in context_files:
+        file_path = os.path.join(current_dir, file_name)
+        if os.path.isfile(file_path):
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    full_question += f"\n[CONTEXT FILE: {file_name}]\n{content}\n"
+            except Exception as e:
+                full_question += f"\n⚠️ Error reading context file {file_name}: {str(e)}\n"
+
     for file_name, file_path in valid_files:
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
@@ -236,6 +272,7 @@ No explanation, just final code. With given files order.
                             ts = time.strftime("%Y%m%d%H%M%S")
                             name, ext = os.path.splitext(file_name)
                             backup_path = os.path.join(backup_dir, f"{name}_{ts}{ext}")
+                            os.makedirs(os.path.dirname(backup_path), exist_ok=True)
                             with open(backup_path, 'w', encoding='utf-8') as f:
                                 f.write(old_content)
                             print(f"🗂 Backup: {backup_path}")
