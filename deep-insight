@@ -318,13 +318,17 @@ def parse_args():
 def collect_files(file_list, current_dir):
     valid_files = []
 
-    for file_name in file_list:
-        file_path = os.path.join(current_dir, file_name)
+    for file_path in file_list:
+        if not os.path.isabs(file_path):
+            file_path = os.path.join(current_dir, file_path)
+        
+        file_name = os.path.basename(file_path)
+        
         if os.path.isfile(file_path):
             valid_files.append((file_name, file_path))
             print(f"✅ File found: {file_name}")
         else:
-            print(f"⚠️ File does not exist: {file_name}")
+            print(f"⚠️ File does not exist: {file_path}")
 
     if not valid_files:
         print("❌ No valid files found!")
@@ -456,15 +460,25 @@ def process_response(driver, valid_files, overwrite, backup_dir, report_dir, CUR
 
                 if os.path.exists(file_path):
                     ts = time.strftime("%Y%m%d%H%M%S")
-                    name, ext = os.path.splitext(file_name)
-                    backup_path = os.path.join(backup_dir, f"{name}_{ts}{ext}")
+                    
+                    rel_path = os.path.relpath(file_path, os.getcwd())
+                    rel_dir = os.path.dirname(rel_path)
+                    name, ext = os.path.splitext(os.path.basename(file_path))
+                    
+                    if rel_dir and rel_dir != '.':
+                        backup_subdir = os.path.join(backup_dir, rel_dir)
+                        ensure_dir(backup_subdir)
+                        backup_path = os.path.join(backup_subdir, f"{name}_{ts}{ext}")
+                    else:
+                        backup_path = os.path.join(backup_dir, f"{name}_{ts}{ext}")
+                    
                     ensure_dir(os.path.dirname(backup_path))
                     write_file(backup_path, old_content)
                     print(f"🗂 Backup: {backup_path}")
 
                 if overwrite:
                     write_file(file_path, code_content)
-                    print(f"  💾 Saved: {file_path} ({len(code_content)} characters)")
+                    print(f"💾 Saved: {file_path} ({len(code_content)} characters)")
                 else:
                     diff = list(difflib.unified_diff(
                         old_content.splitlines(),
