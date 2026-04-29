@@ -336,7 +336,7 @@ def collect_files(file_list, current_dir):
 def build_prompt(question, context_files, valid_files, current_dir):
     full_question = f"""{question}
 
-No explanation, just final code. With given files order. Do not change or modify context files.
+No explanation, just final code in code block(s). With given files order. Do not change or modify context files.
 """
 
     for file_name in context_files:
