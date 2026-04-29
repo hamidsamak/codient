@@ -200,6 +200,7 @@ def print_usage():
     deep-insight <QUESTION> <FILE_1> [FILE_2] ... [OPTIONS]
     deep-insight --history <FILE>
     deep-insight --rollback <FILE> [--timestamp YYYYMMDDHHMMSS]
+    deep-insight --browser
 
 📋 ARGUMENTS:
     QUESTION            Your request for the AI
@@ -216,12 +217,16 @@ def print_usage():
     --rollback FILE     Rollback a file to previous version
     --timestamp TS      Specific timestamp for rollback (default: latest)
 
+🌐 BROWSER SESSION:
+    --browser           Open browser standalone for login/setup (saves cookies)
+
 💡 EXAMPLES:
     deep-insight "Add error handling" app.py utils.py
     deep-insight --overwrite "Fix indentation" main.py
     deep-insight "Refactor code" --context example.py -- mycode.py
     deep-insight "Optimize this" slow_code.py
     deep-insight --debug "Add comments" script.py
+    deep-insight --browser
     deep-insight --history main.py
     deep-insight --rollback main.py
     deep-insight --rollback main.py --timestamp 20231201120000
@@ -239,6 +244,11 @@ def parse_args():
     rollback_mode = False
     rollback_timestamp = None
     target_file = None
+    browser_only_mode = False
+
+    if "--browser" in sys.argv:
+        browser_only_mode = True
+        return None, None, None, None, None, history_mode, rollback_mode, target_file, None, browser_only_mode
 
     if "--history" in sys.argv:
         history_mode = True
@@ -248,7 +258,7 @@ def parse_args():
         else:
             print("❌ Error: Please specify filename after --history")
             sys.exit(1)
-        return None, None, None, None, None, history_mode, rollback_mode, target_file, None
+        return None, None, None, None, None, history_mode, rollback_mode, target_file, None, browser_only_mode
     
     if "--rollback" in sys.argv:
         rollback_mode = True
@@ -264,7 +274,7 @@ def parse_args():
             if ts_index + 1 < len(sys.argv):
                 rollback_timestamp = sys.argv[ts_index + 1]
         
-        return None, None, None, None, None, history_mode, rollback_mode, target_file, rollback_timestamp
+        return None, None, None, None, None, history_mode, rollback_mode, target_file, rollback_timestamp, browser_only_mode
 
     if "--overwrite" in sys.argv:
         overwrite = True
@@ -302,7 +312,7 @@ def parse_args():
 
         i += 1
 
-    return question, cleaned_args, context_files, overwrite, debug, history_mode, rollback_mode, target_file, rollback_timestamp
+    return question, cleaned_args, context_files, overwrite, debug, history_mode, rollback_mode, target_file, rollback_timestamp, browser_only_mode
 
 
 def collect_files(file_list, current_dir):
@@ -491,7 +501,7 @@ def process_response(driver, valid_files, overwrite, backup_dir, report_dir, CUR
 
 def main():
     (question, file_list, context_files, overwrite, debug, 
-     history_mode, rollback_mode, target_file, rollback_timestamp) = parse_args()
+     history_mode, rollback_mode, target_file, rollback_timestamp, browser_only_mode) = parse_args()
 
     current_dir = os.getcwd()
     HOME_DIR = os.path.expanduser("~")
@@ -504,6 +514,32 @@ def main():
 
     for d in [BASE_DIR, backup_dir, report_dir, profile_dir, debug_dir]:
         ensure_dir(d)
+
+    if browser_only_mode:
+        print("\n🌐 Starting browser in standalone mode...")
+        print("📝 Please login and do whatever you need.")
+        print("🔒 Session cookies will be saved.")
+        print("❌ Close the browser window when you're done.\n")
+        
+        driver = create_driver(profile_dir)
+        driver.get("https://chat.deepseek.com/")
+        
+        try:
+            while True:
+                time.sleep(2)
+                try:
+                    driver.current_url
+                except:
+                    print("\n✅ Browser closed. Session saved!")
+                    break
+        except KeyboardInterrupt:
+            print("\n⚠️ Interrupted by user")
+        finally:
+            try:
+                driver.quit()
+            except:
+                pass
+        return
 
     if history_mode and target_file:
         show_history(backup_dir, target_file)
