@@ -210,6 +210,7 @@ def print_usage():
     --overwrite         Auto-overwrite files (creates backup)
     --context FILE      Add read-only context file
     --debug             Enable debug mode (saves prompt, input, and response HTML)
+    --proxy PROXY       Use HTTP/SOCKS proxy (e.g. http://127.0.0.1:10808 or socks5://127.0.0.1:10808)
     --                  End of context files list
 
 🔄 HISTORY & ROLLBACK:
@@ -245,10 +246,22 @@ def parse_args():
     rollback_timestamp = None
     target_file = None
     browser_only_mode = False
+    proxy = None
+
+    if "--proxy" in sys.argv:
+        proxy_index = sys.argv.index("--proxy")
+        if proxy_index + 1 < len(sys.argv):
+            proxy = sys.argv[proxy_index + 1]
+        else:
+            print("❌ Error: Please specify proxy after --proxy")
+            sys.exit(1)
+
+        sys.argv.remove("--proxy")
+        sys.argv.remove(proxy)
 
     if "--browser" in sys.argv:
         browser_only_mode = True
-        return None, None, None, None, None, history_mode, rollback_mode, target_file, None, browser_only_mode
+        return None, None, None, None, None, history_mode, rollback_mode, target_file, None, browser_only_mode, proxy
 
     if "--history" in sys.argv:
         history_mode = True
@@ -258,7 +271,7 @@ def parse_args():
         else:
             print("❌ Error: Please specify filename after --history")
             sys.exit(1)
-        return None, None, None, None, None, history_mode, rollback_mode, target_file, None, browser_only_mode
+        return None, None, None, None, None, history_mode, rollback_mode, target_file, None, browser_only_mode, proxy
     
     if "--rollback" in sys.argv:
         rollback_mode = True
@@ -274,7 +287,7 @@ def parse_args():
             if ts_index + 1 < len(sys.argv):
                 rollback_timestamp = sys.argv[ts_index + 1]
         
-        return None, None, None, None, None, history_mode, rollback_mode, target_file, rollback_timestamp, browser_only_mode
+        return None, None, None, None, None, history_mode, rollback_mode, target_file, rollback_timestamp, browser_only_mode, proxy
 
     if "--overwrite" in sys.argv:
         overwrite = True
@@ -312,7 +325,7 @@ def parse_args():
 
         i += 1
 
-    return question, cleaned_args, context_files, overwrite, debug, history_mode, rollback_mode, target_file, rollback_timestamp, browser_only_mode
+    return question, cleaned_args, context_files, overwrite, debug, history_mode, rollback_mode, target_file, rollback_timestamp, browser_only_mode, proxy
 
 
 def collect_files(file_list, current_dir):
@@ -362,7 +375,7 @@ No explanation, just final code in code block(s). With given files order. Do not
     return full_question
 
 
-def create_driver(profile_dir):
+def create_driver(profile_dir, proxy):
     CHROMEDRIVER_PATH = "/usr/bin/chromedriver"
 
     ensure_dir(profile_dir)
@@ -374,7 +387,19 @@ def create_driver(profile_dir):
     options = webdriver.ChromeOptions()
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
+    options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument(f'--user-data-dir={profile_dir}')
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option("useAutomationExtension", False)
+
+    if proxy:
+        print(f"🌐 Using proxy: {proxy}")
+        options.add_argument(f'--proxy-server={proxy}')
+    
+    prefs = {
+        "profile.default_content_setting_values.geolocation": 2
+    }
+    options.add_experimental_option("prefs", prefs)
 
     service = Service(executable_path=CHROMEDRIVER_PATH)
     return webdriver.Chrome(service=service, options=options)
@@ -515,7 +540,7 @@ def process_response(driver, valid_files, overwrite, backup_dir, report_dir, CUR
 
 def main():
     (question, file_list, context_files, overwrite, debug, 
-     history_mode, rollback_mode, target_file, rollback_timestamp, browser_only_mode) = parse_args()
+     history_mode, rollback_mode, target_file, rollback_timestamp, browser_only_mode, proxy) = parse_args()
 
     current_dir = os.getcwd()
     HOME_DIR = os.path.expanduser("~")
@@ -535,7 +560,7 @@ def main():
         print("🔒 Session cookies will be saved.")
         print("❌ Close the browser window when you're done.\n")
         
-        driver = create_driver(profile_dir)
+        driver = create_driver(profile_dir, proxy)
         driver.get("https://chat.deepseek.com/")
         
         try:
@@ -575,7 +600,7 @@ def main():
 
     CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-    driver = create_driver(profile_dir)
+    driver = create_driver(profile_dir, proxy)
 
     try:
         success = send_prompt(driver, full_question, debug, debug_dir, full_question)
