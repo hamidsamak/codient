@@ -34,11 +34,11 @@ def show_history(backup_dir, file_name):
     ext = os.path.splitext(file_name)[1]
     pattern = os.path.join(backup_dir, f"{base_name}_*{ext}")
     backups = glob.glob(pattern)
-    
+
     if not backups:
         print(f"\n❌ No backup versions found for '{file_name}'")
         return
-    
+
     backup_list = []
     for backup in backups:
         timestamp_str = backup.replace(backup_dir, "").replace(base_name, "").replace(ext, "").replace("_", "").replace("/", "")
@@ -48,9 +48,9 @@ def show_history(backup_dir, file_name):
                 backup_list.append((dt, timestamp_str, backup))
             except:
                 continue
-    
+
     backup_list.sort(reverse=True)
-    
+
     print(f"\n📋 Backup history for '{file_name}':")
     print("=" * 70)
     for idx, (dt, ts, path) in enumerate(backup_list, 1):
@@ -62,14 +62,14 @@ def show_history(backup_dir, file_name):
 def rollback_file(backup_dir, file_name, timestamp=None):
     current_dir = os.getcwd()
     target_file_path = os.path.join(current_dir, file_name)
-    
+
     if not os.path.exists(target_file_path):
         print(f"❌ File '{file_name}' does not exist in current directory")
         return False
-    
+
     base_name = os.path.splitext(file_name)[0]
     ext = os.path.splitext(file_name)[1]
-    
+
     if timestamp:
         backup_path = os.path.join(backup_dir, f"{base_name}_{timestamp}{ext}")
         if os.path.exists(backup_path):
@@ -77,7 +77,7 @@ def rollback_file(backup_dir, file_name, timestamp=None):
             current_content = read_file(target_file_path)
             write_file(current_backup, current_content)
             print(f"🗂 Backup of current version: {current_backup}")
-            
+
             backup_content = read_file(backup_path)
             write_file(target_file_path, backup_content)
             print(f"✅ File '{file_name}' rolled back to version {timestamp}")
@@ -88,20 +88,20 @@ def rollback_file(backup_dir, file_name, timestamp=None):
     else:
         pattern = os.path.join(backup_dir, f"{base_name}_*{ext}")
         backups = glob.glob(pattern)
-        
+
         if not backups:
             print(f"❌ No backup versions found for '{file_name}'")
             return False
-        
+
         latest_backup = max(backups, key=os.path.getmtime)
-        
+
         ts = latest_backup.replace(backup_dir, "").replace(base_name, "").replace(ext, "").replace("_", "").replace("/", "")
-        
+
         current_backup = os.path.join(backup_dir, f"{base_name}_{time.strftime('%Y%m%d%H%M%S')}{ext}")
         current_content = read_file(target_file_path)
         write_file(current_backup, current_content)
         print(f"🗂 Backup of current version: {current_backup}")
-        
+
         backup_content = read_file(latest_backup)
         write_file(target_file_path, backup_content)
         print(f"✅ File '{file_name}' rolled back to latest version (timestamp: {ts})")
@@ -233,7 +233,7 @@ def print_usage():
     deep-insight --rollback main.py
     deep-insight --rollback main.py --timestamp 20231201120000
 """
-    
+
     print(usage_text)
 
 
@@ -273,7 +273,7 @@ def parse_args():
             print("❌ Error: Please specify filename after --history")
             sys.exit(1)
         return None, None, None, None, None, history_mode, rollback_mode, target_file, None, browser_only_mode, proxy
-    
+
     if "--rollback" in sys.argv:
         rollback_mode = True
         rollback_index = sys.argv.index("--rollback")
@@ -282,12 +282,12 @@ def parse_args():
         else:
             print("❌ Error: Please specify filename after --rollback")
             sys.exit(1)
-        
+
         if "--timestamp" in sys.argv:
             ts_index = sys.argv.index("--timestamp")
             if ts_index + 1 < len(sys.argv):
                 rollback_timestamp = sys.argv[ts_index + 1]
-        
+
         return None, None, None, None, None, history_mode, rollback_mode, target_file, rollback_timestamp, browser_only_mode, proxy
 
     if "--overwrite" in sys.argv:
@@ -335,9 +335,9 @@ def collect_files(file_list, current_dir):
     for file_path in file_list:
         if not os.path.isabs(file_path):
             file_path = os.path.join(current_dir, file_path)
-        
+
         file_name = os.path.basename(file_path)
-        
+
         if os.path.isfile(file_path):
             valid_files.append((file_name, file_path))
             print(f"✅ File found: {file_name}")
@@ -398,7 +398,7 @@ def create_driver(profile_dir, proxy):
     if proxy:
         print(f"🌐 Using proxy: {proxy}")
         options.add_argument(f'--proxy-server={proxy}')
-    
+
     prefs = {
         "profile.default_content_setting_values.geolocation": 2
     }
@@ -411,11 +411,11 @@ def create_driver(profile_dir, proxy):
 def send_prompt(driver, full_question, debug, debug_dir, prompt_text):
     print("📄 Opening DeepSeek...")
     driver.get("https://chat.deepseek.com/")
-    
+
     if debug:
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         debug_file = os.path.join(debug_dir, f"debug_{timestamp}.html")
-        
+
         prompt_debug = os.path.join(debug_dir, f"prompt_{timestamp}.txt")
         write_file(prompt_debug, prompt_text)
         print(f"🐛 Debug: Prompt saved to {prompt_debug}")
@@ -572,10 +572,10 @@ def main():
         print("📝 Please login and do whatever you need.")
         print("🔒 Session cookies will be saved.")
         print("❌ Close the browser window when you're done.\n")
-        
+
         driver = create_driver(profile_dir, proxy)
         driver.get("https://chat.deepseek.com/")
-        
+
         try:
             while True:
                 time.sleep(2)
@@ -596,7 +596,7 @@ def main():
     if history_mode and target_file:
         show_history(backup_dir, target_file)
         return
-    
+
     if rollback_mode and target_file:
         rollback_file(backup_dir, target_file, rollback_timestamp)
         return
