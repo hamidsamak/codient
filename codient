@@ -215,9 +215,9 @@ def generate_diff_html(diffs, output_path):
 def print_usage():
     usage_text = """
 ╔════════════════════════════════════════════════════════════════╗
-║           🧠 Codient - AI Code Assistant v1.0             ║
+║           🧠 Codient - AI Code Assistant v1.0                  ║
 ║           Author: Hamid Samak                                  ║
-║           GitHub: https://github.com/hamidsamak/codient   ║
+║           GitHub: https://github.com/hamidsamak/codient        ║
 ╚════════════════════════════════════════════════════════════════╝
 
 📖 USAGE:
