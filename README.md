@@ -1,14 +1,14 @@
-# Deep Insight – CLI AI Code Assistant (DeepSeek Powered)
+# Codient – CLI AI Code Assistant
 
-Deep Insight is a powerful **command-line AI coding assistant** powered by **DeepSeek AI**, designed to analyze, refactor, debug, and generate code directly from your terminal.
+Codient is a powerful **command-line AI coding assistant** powered by **Claude, ChatGPT, and DeepSeek**, designed to analyze, refactor, debug, and generate code directly from your terminal.
 
-It works by sending your codebase to an automated AI pipeline (Selenium-based DeepSeek session) and returning structured results, including safe file updates, diffs, backups, and rollback support.
+It works by sending your codebase to an automated AI pipeline (Selenium-based browser session) and returning structured results, including safe file updates, diffs, backups, and rollback support.
 
 ---
 
 ## ✨ Features
 
-- 🤖 DeepSeek AI powered code analysis & generation
+- 🤖 Multi-model AI support (Claude, ChatGPT, DeepSeek)
 - 📂 Multi-file project support
 - 🧠 Context-aware prompting system
 - 💾 Safe overwrite mode with automatic backups
@@ -25,8 +25,8 @@ It works by sending your codebase to an automated AI pipeline (Selenium-based De
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/hamidsamak/deep-insight.git
-cd deep-insight
+git clone https://github.com/hamidsamak/codient.git
+cd codient
 ```
 
 ---
@@ -50,7 +50,7 @@ Make sure you also have:
 ### Basic usage
 
 ```bash
-deep-insight "Fix this code" file1.py file2.py
+codient "Fix this code" file1.py file2.py
 ```
 
 ---
@@ -58,7 +58,7 @@ deep-insight "Fix this code" file1.py file2.py
 ### With overwrite (auto-save changes)
 
 ```bash
-deep-insight --overwrite "Refactor this code" main.py
+codient --overwrite "Refactor this code" main.py
 ```
 
 ---
@@ -66,7 +66,7 @@ deep-insight --overwrite "Refactor this code" main.py
 ### Using context files (read-only reference)
 
 ```bash
-deep-insight "Improve architecture" --context utils.py config.py -- main.py
+codient "Improve architecture" --context utils.py config.py -- main.py
 ```
 
 ---
@@ -74,7 +74,7 @@ deep-insight "Improve architecture" --context utils.py config.py -- main.py
 ### Enable debug mode
 
 ```bash
-deep-insight --debug "Explain this code" app.py
+codient --debug "Explain this code" app.py
 ```
 
 ---
@@ -82,7 +82,17 @@ deep-insight --debug "Explain this code" app.py
 ### Open browser session
 
 ```bash
-deep-insight --browser
+codient --browser
+```
+
+---
+
+### Select AI model
+
+```bash
+codient --model claude "Fix this code" app.py
+codient --model chatgpt "Refactor this" main.py
+codient --model deepseek "Optimize this" utils.py
 ```
 
 ---
@@ -95,6 +105,7 @@ deep-insight --browser
 | `--context` | Add reference files (not modified) |
 | `--debug` | Save prompt + response HTML for debugging |
 | `--proxy` | Use HTTP/SOCKS5 proxy |
+| `--model` | Select AI model: `claude`, `chatgpt`, `deepseek` (default: `claude`) |
 | `--browser` | Open persistent login session |
 | `--history FILE` | Show backup history |
 | `--rollback FILE` | Restore previous file version |
@@ -107,7 +118,7 @@ deep-insight --browser
 Before any modification, files are automatically backed up:
 
 ```bash
-~/.deep-insight/backups/
+~/.codient/backups/
 ```
 
 You can safely rollback anytime.
@@ -117,13 +128,13 @@ You can safely rollback anytime.
 ## 🔄 Rollback Example
 
 ```bash
-deep-insight --rollback main.py
+codient --rollback main.py
 ```
 
 Or specific version:
 
 ```bash
-deep-insight --rollback main.py --timestamp 20250101123000
+codient --rollback main.py --timestamp 20250101123000
 ```
 
 ---
@@ -141,19 +152,19 @@ If `--overwrite` is NOT used:
 ## 🐛 Debug Mode
 
 ```bash
-deep-insight --debug "Fix bug" app.py
+codient --debug "Fix bug" app.py
 ```
 
 Outputs:
 
 - Full AI prompt
-- Raw DeepSeek response
+- Raw AI response
 - HTML debug logs
 
 Stored in:
 
 ```bash
-~/.deep-insight/debug/
+~/.codient/debug/
 ```
 
 ---
@@ -167,7 +178,7 @@ Python Engine
    ↓
 Selenium Automation
    ↓
-DeepSeek Web UI
+AI Web UI (Claude / ChatGPT / DeepSeek)
    ↓
 AI Response Parsing
    ↓
@@ -182,4 +193,4 @@ File System Update / Diff / Backup
 - Google Chrome
 - ChromeDriver
 - Internet connection
-- DeepSeek access
+- Access to Claude, ChatGPT, or DeepSeek

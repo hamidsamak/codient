@@ -136,7 +136,7 @@ def generate_diff_html(diffs, output_path):
     <html>
     <head>
         <meta charset="UTF-8">
-        <title>Deep Insight Diff Report</title>
+        <title>Codient Diff Report</title>
         <style>
             body { font-family: monospace; background: #111; color: #eee; }
             .file { margin-bottom: 40px; }
@@ -187,7 +187,7 @@ def generate_diff_html(diffs, output_path):
         </style>
     </head>
     <body>
-    <h1>Deep Insight Diff Report</h1>
+    <h1>Codient Diff Report</h1>
     """
 
     for file_name, diff_lines in diffs:
@@ -215,16 +215,16 @@ def generate_diff_html(diffs, output_path):
 def print_usage():
     usage_text = """
 ╔════════════════════════════════════════════════════════════════╗
-║           🧠 Deep Insight - AI Code Assistant v1.0             ║
+║           🧠 Codient - AI Code Assistant v1.0             ║
 ║           Author: Hamid Samak                                  ║
-║           GitHub: https://github.com/hamidsamak/deep-insight   ║
+║           GitHub: https://github.com/hamidsamak/codient   ║
 ╚════════════════════════════════════════════════════════════════╝
 
 📖 USAGE:
-    deep-insight <QUESTION> <FILE_1> [FILE_2] ... [OPTIONS]
-    deep-insight --history <FILE>
-    deep-insight --rollback <FILE> [--timestamp YYYYMMDDHHMMSS]
-    deep-insight --browser
+    codient <QUESTION> <FILE_1> [FILE_2] ... [OPTIONS]
+    codient --history <FILE>
+    codient --rollback <FILE> [--timestamp YYYYMMDDHHMMSS]
+    codient --browser
 
 📋 ARGUMENTS:
     QUESTION            Your request for the AI
@@ -247,16 +247,16 @@ def print_usage():
     --browser           Open browser standalone for login/setup (saves cookies)
 
 💡 EXAMPLES:
-    deep-insight "Add error handling" app.py utils.py
-    deep-insight --overwrite "Fix indentation" main.py
-    deep-insight "Refactor code" --context example.py -- mycode.py
-    deep-insight "Optimize this" slow_code.py
-    deep-insight --debug "Add comments" script.py
-    deep-insight --model claude "Add error handling" app.py
-    deep-insight --browser
-    deep-insight --history main.py
-    deep-insight --rollback main.py
-    deep-insight --rollback main.py --timestamp 20231201120000
+    codient "Add error handling" app.py utils.py
+    codient --overwrite "Fix indentation" main.py
+    codient "Refactor code" --context example.py -- mycode.py
+    codient "Optimize this" slow_code.py
+    codient --debug "Add comments" script.py
+    codient --model claude "Add error handling" app.py
+    codient --browser
+    codient --history main.py
+    codient --rollback main.py
+    codient --rollback main.py --timestamp 20231201120000
 """
 
     print(usage_text)
@@ -607,7 +607,7 @@ def main():
     current_dir = os.getcwd()
     HOME_DIR = os.path.expanduser("~")
 
-    BASE_DIR = os.path.join(HOME_DIR, ".deep-insight")
+    BASE_DIR = os.path.join(HOME_DIR, ".codient")
     backup_dir = os.path.join(BASE_DIR, "backups")
     report_dir = os.path.join(BASE_DIR, "reports")
     profile_dir = os.path.join(BASE_DIR, "chrome-profile")
