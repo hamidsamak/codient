@@ -5,6 +5,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
+import re
 import os
 import sys
 import time
@@ -353,7 +354,10 @@ def collect_files(file_list, current_dir):
 def build_prompt(question, context_files, valid_files, current_dir):
     full_question = f"""{question}
 
-No explanation, just final code in code block(s). With given files order. Do not change or modify context files.
+Rules:
+1. Return ONLY a single fenced XML code block (```xml ... ```), no explanation or commentary.
+2. Wrap each modified file like: <file name="..." path="...">code here</file>
+3. Do NOT include readonly files in the output.
 """
 
     for file_name in context_files:
@@ -361,19 +365,18 @@ No explanation, just final code in code block(s). With given files order. Do not
         if os.path.isfile(file_path):
             try:
                 content = read_file(file_path)
-                full_question += f"\n[CONTEXT FILE: {file_name}]\n{content}\n"
+                full_question += f'\n<file name="{file_name}" path="{file_name}" readonly>\n<![CDATA[\n{content}\n]]>\n</file>\n'
             except Exception as e:
                 full_question += f"\n⚠️ Error reading context file {file_name}: {str(e)}\n"
 
     for file_name, file_path in valid_files:
         try:
             content = read_file(file_path)
-            full_question += f"\nFile: {file_name}\nContent:\n{content}\n"
+            full_question += f'\n<file name="{file_name}" path="{file_path}">\n<![CDATA[\n{content}\n]]>\n</file>\n'
         except Exception as e:
             full_question += f"\n⚠️ Error reading file {file_name}: {str(e)}\n"
 
     return full_question
-
 
 def create_driver(profile_dir, proxy):
     CHROMEDRIVER_PATH = "/usr/bin/chromedriver"
@@ -446,10 +449,10 @@ def send_prompt(driver, full_question, debug, debug_dir, prompt_text):
     while True:
         send_buttons = driver.find_elements(By.CSS_SELECTOR, "div[role='button']")
         send_button = send_buttons[-1]
-        if "ds-icon-button--disabled" in send_button.get_attribute("class"):
+        if "ds-button--disabled" in send_button.get_attribute("class"):
             break
         time.sleep(1)
-        
+
     if debug:
         page_html = driver.page_source
         debug_html_file = os.path.join(debug_dir, f"page_{timestamp}.html")
@@ -470,73 +473,83 @@ def process_response(driver, valid_files, overwrite, backup_dir, report_dir, CUR
         markdown = driver.find_element(By.CSS_SELECTOR, ".ds-markdown")
         code_blocks = markdown.find_elements(By.CSS_SELECTOR, "pre")
 
-        if code_blocks:
-            print(f"✅ {len(code_blocks)} code blocks found")
-
-            diffs = []
-
-            for idx, code_block in enumerate(code_blocks):
-                code_content = code_block.text
-                file_name, file_path = valid_files[idx]
-
-                old_content = ""
-                if os.path.exists(file_path):
-                    old_content = read_file(file_path)
-
-                if os.path.exists(file_path):
-                    ts = time.strftime("%Y%m%d%H%M%S")
-                    
-                    rel_path = os.path.relpath(file_path, os.getcwd())
-                    rel_dir = os.path.dirname(rel_path)
-                    name, ext = os.path.splitext(os.path.basename(file_path))
-                    
-                    if rel_dir and rel_dir != '.':
-                        backup_subdir = os.path.join(backup_dir, rel_dir)
-                        ensure_dir(backup_subdir)
-                        backup_path = os.path.join(backup_subdir, f"{name}_{ts}{ext}")
-                    else:
-                        backup_path = os.path.join(backup_dir, f"{name}_{ts}{ext}")
-                    
-                    ensure_dir(os.path.dirname(backup_path))
-                    write_file(backup_path, old_content)
-                    print(f"🗂 Backup: {backup_path}")
-
-                if overwrite:
-                    write_file(file_path, code_content)
-                    print(f"💾 Saved: {file_path} ({len(code_content)} characters)")
-                else:
-                    diff = list(difflib.unified_diff(
-                        old_content.splitlines(),
-                        code_content.splitlines(),
-                        fromfile='old',
-                        tofile='new',
-                        lineterm=''
-                    ))
-                    diffs.append((file_name, diff))
-                    print(f"⚠️ Diff prepared: {file_name}")
-
-            if not overwrite and diffs:
-                report_file = os.path.join(report_dir, f"diff_{int(time.time())}.html")
-                generate_diff_html(diffs, report_file)
-                print(f"📊 Diff report saved: {report_file}")
-                webbrowser.open(f"file://{report_file}")
-
-        else:
+        if not code_blocks:
             print("⚠️ No code blocks found in response")
-
             response_text = responses[-1].text
             output_file = os.path.join(CURRENT_DIR, f"full_response_{int(time.time())}.txt")
-
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(f"Question: {question}\n")
                 f.write(f"Files: {', '.join(file_list)}\n")
                 f.write(f"Full response:\n{response_text}\n")
-
             print(f"💾 Full response saved to {output_file}")
+            return
+
+        if len(code_blocks) > 1:
+            print("⚠️ Warning: Multiple code blocks found, using first one")
+
+        xml_content = code_blocks[0].text
+
+        pattern = re.compile(
+            r'<file\s+name="(?P<name>[^"]+)"\s+path="(?P<path>[^"]+)">\s*(?:<!\[CDATA\[)?(?P<content>.*?)(?:\]\]>)?\s*</file>',
+            re.DOTALL
+        )
+        matches = list(pattern.finditer(xml_content))
+
+        if not matches:
+            print("⚠️ No <file> tags found in XML response")
+            return
+
+        print(f"✅ {len(matches)} file(s) found in response")
+
+        diffs = []
+
+        for match in matches:
+            file_name = match.group("name")
+            file_path = match.group("path")
+            code_content = match.group("content").strip()
+
+            old_content = ""
+            if os.path.exists(file_path):
+                old_content = read_file(file_path)
+
+                ts = time.strftime("%Y%m%d%H%M%S")
+                rel_path = os.path.relpath(file_path, os.getcwd())
+                rel_dir = os.path.dirname(rel_path)
+                name, ext = os.path.splitext(os.path.basename(file_path))
+
+                if rel_dir and rel_dir != '.':
+                    backup_subdir = os.path.join(backup_dir, rel_dir)
+                    ensure_dir(backup_subdir)
+                    backup_path = os.path.join(backup_subdir, f"{name}_{ts}{ext}")
+                else:
+                    backup_path = os.path.join(backup_dir, f"{name}_{ts}{ext}")
+
+                ensure_dir(os.path.dirname(backup_path))
+                write_file(backup_path, old_content)
+                print(f"🗂 Backup: {backup_path}")
+
+            if overwrite:
+                write_file(file_path, code_content)
+                print(f"💾 Saved: {file_path} ({len(code_content)} characters)")
+            else:
+                diff = list(difflib.unified_diff(
+                    old_content.splitlines(),
+                    code_content.splitlines(),
+                    fromfile='old',
+                    tofile='new',
+                    lineterm=''
+                ))
+                diffs.append((file_name, diff))
+                print(f"⚠️ Diff prepared: {file_name}")
+
+        if not overwrite and diffs:
+            report_file = os.path.join(report_dir, f"diff_{int(time.time())}.html")
+            generate_diff_html(diffs, report_file)
+            print(f"📊 Diff report saved: {report_file}")
+            webbrowser.open(f"file://{report_file}")
 
     except Exception as e:
         print(f"❌ Error extracting code: {str(e)}")
-
 
 def main():
     (question, file_list, context_files, overwrite, debug, 
