@@ -190,8 +190,9 @@ def generate_diff_html(diffs, output_path):
     <h1>Codient Diff Report</h1>
     """
 
-    for file_name, diff_lines in diffs:
-        html_content += f"<div class='file'><div class='filename'>{file_name}</div><pre>"
+    for file_name, diff_lines, action in diffs:
+        action_label = "🆕 NEW FILE" if action == "create" else "✏️ EDITED"
+        html_content += f"<div class='file'><div class='filename'>{action_label} &mdash; {file_name}</div><pre>"
 
         for line in diff_lines:
             if line.startswith('+++') or line.startswith('---'):
@@ -396,8 +397,10 @@ def build_prompt(question, context_files, valid_files, current_dir):
 
 Rules:
 1. Return ONLY a single fenced XML code block (```xml ... ```), no explanation or commentary.
-2. Wrap each modified file like: <file name="..." path="...">code here</file>
-3. Do NOT include readonly files in the output.
+2. Wrap each file like: <file name="..." path="..." action="edit|create">code here</file>
+   - Use action="edit" for existing files that are being modified.
+   - Use action="create" for brand new files that do not exist yet.
+3. Do NOT include readonly files in the output under any circumstances.
 """
 
     for file_name in context_files:
@@ -539,7 +542,7 @@ def process_response(driver, model, valid_files, overwrite, backup_dir, report_d
         xml_content = code_blocks[0].text
 
         pattern = re.compile(
-            r'<file\s+name="(?P<name>[^"]+)"\s+path="(?P<path>[^"]+)">\s*(?:<!\[CDATA\[)?(?P<content>.*?)(?:\]\]>)?\s*</file>',
+            r'<file\s+name="(?P<name>[^"]+)"\s+path="(?P<path>[^"]+)"(?:\s+action="(?P<action>[^"]+)")?[^>]*>\s*(?:<!\[CDATA\[)?(?P<content>.*?)(?:\]\]>)?\s*</file>',
             re.DOTALL
         )
         matches = list(pattern.finditer(xml_content))
@@ -555,7 +558,15 @@ def process_response(driver, model, valid_files, overwrite, backup_dir, report_d
         for match in matches:
             file_name = match.group("name")
             file_path = match.group("path")
+            action = (match.group("action") or "edit").lower()
             code_content = match.group("content").strip()
+
+            is_new_file = action == "create"
+
+            if is_new_file:
+                print(f"🆕 New file to create: {file_name}")
+            else:
+                print(f"✏️  Editing existing file: {file_name}")
 
             old_content = ""
             if os.path.exists(file_path):
@@ -578,18 +589,25 @@ def process_response(driver, model, valid_files, overwrite, backup_dir, report_d
                 print(f"🗂 Backup: {backup_path}")
 
             if overwrite:
+                ensure_dir(os.path.dirname(os.path.abspath(file_path)))
                 write_file(file_path, code_content)
-                print(f"💾 Saved: {file_path} ({len(code_content)} characters)")
+                if is_new_file:
+                    print(f"🆕 Created: {file_path} ({len(code_content)} characters)")
+                else:
+                    print(f"💾 Saved: {file_path} ({len(code_content)} characters)")
             else:
                 diff = list(difflib.unified_diff(
                     old_content.splitlines(),
                     code_content.splitlines(),
-                    fromfile='old',
+                    fromfile='/dev/null' if is_new_file else 'old',
                     tofile='new',
                     lineterm=''
                 ))
-                diffs.append((file_name, diff))
-                print(f"⚠️ Diff prepared: {file_name}")
+                diffs.append((file_name, diff, action))
+                if is_new_file:
+                    print(f"⚠️ New file diff prepared: {file_name}")
+                else:
+                    print(f"⚠️ Diff prepared: {file_name}")
 
         if not overwrite and diffs:
             report_file = os.path.join(report_dir, f"diff_{int(time.time())}.html")
