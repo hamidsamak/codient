@@ -24,7 +24,7 @@ MODEL_CONFIG = {
         "send_selector":     "button[aria-label='Send message']",
         "send_index":        0,
         "done_selector":     "button[aria-label='Use voice mode']",
-        "done_class":        None,
+        "done_index":        None,
     },
     "chatgpt": {
         "url":               "https://chatgpt.com/",
@@ -34,7 +34,7 @@ MODEL_CONFIG = {
         "send_selector":     "button[aria-label='Send prompt']",
         "send_index":        0,
         "done_selector":     "button[aria-label='Start Voice']",
-        "done_class":        None,
+        "done_index":        None,
     },
     "deepseek": {
         "url":               "https://chat.deepseek.com/",
@@ -43,8 +43,8 @@ MODEL_CONFIG = {
         "response_selector": ".ds-markdown",
         "send_selector":     "div[role='button']",
         "send_index":        -1,
-        "done_selector":     "div[role='button']",
-        "done_class":        "ds-button--disabled",
+        "done_selector":     ".ds-virtual-list .ds-button--iconLabelTertiary",
+        "done_index":        6,
     },
 }
 
@@ -505,8 +505,8 @@ def send_prompt(driver, model, full_question, debug, debug_dir):
 
     while True:
         done_buttons = driver.find_elements(By.CSS_SELECTOR, config["done_selector"])
-        if config["done_class"]:
-            if done_buttons and config["done_class"] in done_buttons[-1].get_attribute("class"):
+        if config["done_index"]:
+            if len(done_buttons) > config["done_index"]:
                 break
         else:
             if done_buttons:
