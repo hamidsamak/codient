@@ -26,6 +26,16 @@ MODEL_CONFIG = {
         "done_selector":     "button[aria-label='Use voice mode']",
         "done_class":        None,
     },
+    "chatgpt": {
+        "url":               "https://chatgpt.com/",
+        "input_selector":    "div[contenteditable='true']",
+        "fill_script":       "arguments[0].innerHTML = arguments[1];",
+        "response_selector": ".markdown",
+        "send_selector":     "button[aria-label='Send prompt']",
+        "send_index":        0,
+        "done_selector":     "button[aria-label='Start Voice']",
+        "done_class":        None,
+    },
     "deepseek": {
         "url":               "https://chat.deepseek.com/",
         "input_selector":    "textarea",
@@ -464,7 +474,7 @@ def send_prompt(driver, model, full_question, debug, debug_dir):
 
     config = MODEL_CONFIG[model]
 
-    if model == "claude":
+    if model in ("claude", "chatgpt"):
         full_question = "\n".join(
             f"<p>{html.escape(line)}</p>"
             for line in full_question.splitlines()
