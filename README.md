@@ -31,10 +31,11 @@ cd codient
 
 ---
 
-### 2. Install dependencies
+### 2. Create virtual environment and install dependencies
 
 ```bash
-pip install selenium
+python3 -m venv venv
+venv/bin/pip install -r requirements.txt
 ```
 
 Make sure you also have:
@@ -42,6 +43,37 @@ Make sure you also have:
 - Python 3.8+
 - Google Chrome
 - ChromeDriver (matching your Chrome version)
+
+---
+
+### 3. Add to PATH (run from inside the cloned folder)
+
+```bash
+cat > ~/.local/bin/codient << EOF
+#!/bin/bash
+exec "$(pwd)/venv/bin/python" "$(pwd)/codient" "\$@"
+EOF
+chmod +x ~/.local/bin/codient
+```
+
+> Make sure `~/.local/bin` is in your PATH:
+> ```bash
+> echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+> ```
+
+---
+
+### 4. Login to AI models
+
+Before first use, open a browser session for each model you want to use and log in:
+
+```bash
+codient --browser --model claude
+codient --browser --model chatgpt
+codient --browser --model deepseek
+```
+
+> You only need to do this once per model. The session will be saved for future use.
 
 ---
 
