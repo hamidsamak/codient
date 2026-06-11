@@ -411,6 +411,8 @@ Rules:
    - Use action="create" for brand new files that do not exist yet.
    - For path, use only the filename (e.g. app.py) or a relative path (e.g. utils/helpers.py). Do NOT use absolute paths.
 3. Do NOT include readonly files in the output under any circumstances.
+4. Create new files when the task requires functionality not covered by existing editable files.
+
 Current working directory: {current_dir}
 """
 
