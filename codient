@@ -236,6 +236,7 @@ def print_usage():
     codient --history <FILE>
     codient --rollback <FILE> [--timestamp YYYYMMDDHHMMSS]
     codient --browser
+    codient --list-profiles
 
 📋 ARGUMENTS:
     QUESTION            Your request for the AI
@@ -247,6 +248,7 @@ def print_usage():
     --debug             Enable debug mode (saves prompt, input, and response HTML)
     --proxy PROXY       Use HTTP/SOCKS proxy (e.g. http://127.0.0.1:10808 or socks5://127.0.0.1:10808)
     --model MODEL       AI model to use (choices: claude, chatgpt, deepseek) [default: deepseek]
+    --profile NAME      Chrome profile to use (default: "default")
     --                  End of context files list
 
 🔄 HISTORY & ROLLBACK:
@@ -256,6 +258,16 @@ def print_usage():
 
 🌐 BROWSER SESSION:
     --browser           Open browser standalone for login/setup (saves cookies)
+    --list-profiles     List all existing Chrome profiles
+
+👤 PROFILES:
+    Each profile has its own Chrome session and cookies.
+    Profiles are stored under ~/.codient/profiles/<name>/
+
+    Examples:
+        codient --profile work "fix bug" app.py
+        codient --profile personal --model claude "add tests" main.py
+        codient --browser --profile work
 
 💡 EXAMPLES:
     codient "Add error handling" app.py utils.py
@@ -264,13 +276,37 @@ def print_usage():
     codient "Optimize this" slow_code.py
     codient --debug "Add comments" script.py
     codient --model claude "Add error handling" app.py
+    codient --profile work --model chatgpt "Refactor" app.py
     codient --browser
+    codient --browser --profile work
+    codient --list-profiles
     codient --history main.py
     codient --rollback main.py
     codient --rollback main.py --timestamp 20231201120000
 """
 
     print(usage_text)
+
+
+def list_profiles(profiles_base_dir):
+    if not os.path.isdir(profiles_base_dir):
+        print("\n❌ No profiles directory found. No profiles created yet.")
+        return
+
+    profiles = [
+        d for d in os.listdir(profiles_base_dir)
+        if os.path.isdir(os.path.join(profiles_base_dir, d))
+    ]
+
+    if not profiles:
+        print("\n❌ No profiles found.")
+        return
+
+    print(f"\n👤 Available Chrome profiles ({profiles_base_dir}):")
+    print("=" * 50)
+    for profile in sorted(profiles):
+        print(f"  • {profile}")
+    print("=" * 50)
 
 
 def parse_args():
@@ -283,8 +319,10 @@ def parse_args():
     rollback_timestamp = None
     target_file = None
     browser_only_mode = False
+    list_profiles_mode = False
     proxy = None
     model = "deepseek"
+    profile = "default"
 
     if "--proxy" in sys.argv:
         proxy_index = sys.argv.index("--proxy")
@@ -302,7 +340,7 @@ def parse_args():
         if model_index + 1 < len(sys.argv):
             model = sys.argv[model_index + 1].lower()
             if model not in ("claude", "chatgpt", "deepseek"):
-                print("❌ Error: Invalid model. Choices are: claude, chatgpt")
+                print("❌ Error: Invalid model. Choices are: claude, chatgpt, deepseek")
                 sys.exit(1)
         else:
             print("❌ Error: Please specify model after --model")
@@ -311,9 +349,30 @@ def parse_args():
         sys.argv.remove("--model")
         sys.argv.remove(sys.argv[sys.argv.index(model)])
 
+    if "--profile" in sys.argv:
+        profile_index = sys.argv.index("--profile")
+        if profile_index + 1 < len(sys.argv) and not sys.argv[profile_index + 1].startswith("--"):
+            profile = sys.argv[profile_index + 1]
+            if not re.match(r'^[\w\-]+$', profile):
+                print("❌ Error: Profile name can only contain letters, numbers, dashes, and underscores")
+                sys.exit(1)
+            sys.argv.pop(profile_index + 1)
+        else:
+            print("❌ Error: Please specify profile name after --profile")
+            sys.exit(1)
+        sys.argv.remove("--profile")
+
+    if "--list-profiles" in sys.argv:
+        list_profiles_mode = True
+        return (None, None, None, None, None,
+                history_mode, rollback_mode, target_file, None,
+                browser_only_mode, proxy, model, profile, list_profiles_mode)
+
     if "--browser" in sys.argv:
         browser_only_mode = True
-        return None, None, None, None, None, history_mode, rollback_mode, target_file, None, browser_only_mode, proxy, model
+        return (None, None, None, None, None,
+                history_mode, rollback_mode, target_file, None,
+                browser_only_mode, proxy, model, profile, list_profiles_mode)
 
     if "--history" in sys.argv:
         history_mode = True
@@ -323,7 +382,9 @@ def parse_args():
         else:
             print("❌ Error: Please specify filename after --history")
             sys.exit(1)
-        return None, None, None, None, None, history_mode, rollback_mode, target_file, None, browser_only_mode, proxy, model
+        return (None, None, None, None, None,
+                history_mode, rollback_mode, target_file, None,
+                browser_only_mode, proxy, model, profile, list_profiles_mode)
 
     if "--rollback" in sys.argv:
         rollback_mode = True
@@ -339,7 +400,9 @@ def parse_args():
             if ts_index + 1 < len(sys.argv):
                 rollback_timestamp = sys.argv[ts_index + 1]
 
-        return None, None, None, None, None, history_mode, rollback_mode, target_file, rollback_timestamp, browser_only_mode, proxy, model
+        return (None, None, None, None, None,
+                history_mode, rollback_mode, target_file, rollback_timestamp,
+                browser_only_mode, proxy, model, profile, list_profiles_mode)
 
     if "--overwrite" in sys.argv:
         overwrite = True
@@ -377,7 +440,9 @@ def parse_args():
 
         i += 1
 
-    return question, cleaned_args, context_files, overwrite, debug, history_mode, rollback_mode, target_file, rollback_timestamp, browser_only_mode, proxy, model
+    return (question, cleaned_args, context_files, overwrite, debug,
+            history_mode, rollback_mode, target_file, rollback_timestamp,
+            browser_only_mode, proxy, model, profile, list_profiles_mode)
 
 
 def collect_files(file_list, current_dir):
@@ -439,7 +504,7 @@ def create_driver(profile_dir, proxy):
 
     ensure_dir(profile_dir)
 
-    print(f"📁 Using existing profile: {profile_dir}")
+    print(f"📁 Using profile: {profile_dir}")
 
     print("🚀 Launching browser...")
 
@@ -635,8 +700,9 @@ def process_response(driver, model, valid_files, overwrite, backup_dir, report_d
         print(f"❌ Error extracting code: {str(e)}")
 
 def main():
-    (question, file_list, context_files, overwrite, debug, 
-     history_mode, rollback_mode, target_file, rollback_timestamp, browser_only_mode, proxy, model) = parse_args()
+    (question, file_list, context_files, overwrite, debug,
+     history_mode, rollback_mode, target_file, rollback_timestamp,
+     browser_only_mode, proxy, model, profile, list_profiles_mode) = parse_args()
 
     current_dir = os.getcwd()
     HOME_DIR = os.path.expanduser("~")
@@ -644,14 +710,20 @@ def main():
     BASE_DIR = os.path.join(HOME_DIR, ".codient")
     backup_dir = os.path.join(BASE_DIR, "backups")
     report_dir = os.path.join(BASE_DIR, "reports")
-    profile_dir = os.path.join(BASE_DIR, "chrome-profile")
+    profiles_base_dir = os.path.join(BASE_DIR, "profiles")
     debug_dir = os.path.join(BASE_DIR, "debug")
 
-    for d in [BASE_DIR, backup_dir, report_dir, profile_dir, debug_dir]:
+    profile_dir = os.path.join(profiles_base_dir, profile)
+
+    for d in [BASE_DIR, backup_dir, report_dir, profiles_base_dir, debug_dir]:
         ensure_dir(d)
 
+    if list_profiles_mode:
+        list_profiles(profiles_base_dir)
+        return
+
     if browser_only_mode:
-        print("\n🌐 Starting browser in standalone mode...")
+        print(f"\n🌐 Starting browser in standalone mode (profile: {profile})...")
         print("📝 Please login and do whatever you need.")
         print("🔒 Session cookies will be saved.")
         print("❌ Close the browser window when you're done.\n")
@@ -687,6 +759,7 @@ def main():
     valid_files = collect_files(file_list, current_dir) if file_list else []
 
     print(f"\n📝 Your question: {question}")
+    print(f"👤 Profile: {profile}")
     if valid_files:
         print(f"📁 Number of files: {len(valid_files)}")
     else:
@@ -717,7 +790,7 @@ def main():
                 file_list
             )
 
-        print(f"💾 History and session saved in: {profile_dir}")
+        print(f"💾 Profile session saved in: {profile_dir}")
 
     except Exception as e:
         print(f"❌ Error: {str(e)}")
