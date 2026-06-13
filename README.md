@@ -17,6 +17,7 @@ It works by sending your codebase to an automated AI pipeline (Selenium-based br
 - 🐛 Debug mode (full prompt + response logging)
 - 🌐 Browser automation session (persistent login)
 - 🌐 Proxy support (HTTP / SOCKS5)
+- 👤 Multi-profile Chrome support (separate sessions per account)
 
 ---
 
@@ -129,6 +130,40 @@ codient --model deepseek "Optimize this" utils.py
 
 ---
 
+## 👤 Profiles
+
+Profiles let you maintain **separate Chrome sessions** for different accounts or purposes — for example a work account on Claude and a personal account on ChatGPT.
+
+Each profile has its own isolated browser session stored under:
+
+```bash
+~/.codient/profiles/<name>/
+```
+
+### Login with a specific profile
+
+```bash
+codient --browser --profile work
+codient --browser --profile personal
+```
+
+### Use a profile for AI commands
+
+```bash
+codient --profile work "Fix this code" app.py
+codient --profile personal --model claude "Refactor this" main.py
+```
+
+### List all existing profiles
+
+```bash
+codient --list-profiles
+```
+
+If `--profile` is not specified, the `default` profile is used automatically.
+
+---
+
 ## 🧩 CLI Options
 
 | Flag | Description |
@@ -137,8 +172,10 @@ codient --model deepseek "Optimize this" utils.py
 | `--context` | Add reference files (not modified) |
 | `--debug` | Save prompt + response HTML for debugging |
 | `--proxy` | Use HTTP/SOCKS5 proxy |
-| `--model` | Select AI model: `claude`, `chatgpt`, `deepseek` (default: `claude`) |
+| `--model` | Select AI model: `claude`, `chatgpt`, `deepseek` (default: `deepseek`) |
+| `--profile` | Chrome profile to use (default: `default`) |
 | `--browser` | Open persistent login session |
+| `--list-profiles` | List all existing profiles |
 | `--history FILE` | Show backup history |
 | `--rollback FILE` | Restore previous file version |
 | `--timestamp` | Restore specific version |
