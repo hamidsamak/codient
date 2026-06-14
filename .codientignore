@@ -1,0 +1,52 @@
+# Package managers
+node_modules/
+vendor/
+.venv/
+venv/
+env/
+__pycache__/
+site-packages/
+.pip/
+bower_components/
+jspm_packages/
+
+# Build output
+dist/
+build/
+out/
+.next/
+.nuxt/
+.output/
+target/
+bin/
+obj/
+
+# Version control & IDE
+.git/
+.svn/
+.hg/
+.idea/
+.vscode/
+*.suo
+*.user
+
+# Logs & temp
+*.log
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Test coverage & cache
+coverage/
+.cache/
+.pytest_cache/
+.mypy_cache/
+htmlcoverage/
+
+# Lock files
+package-lock.json
+yarn.lock
+composer.lock
+Pipfile.lock
+poetry.lock

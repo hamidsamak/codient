@@ -48,6 +48,84 @@ MODEL_CONFIG = {
     },
 }
 
+DEFAULT_IGNORE_PATTERNS = [
+    "node_modules", "vendor", ".venv", "venv", "env", "__pycache__",
+    "site-packages", ".pip", "bower_components", "jspm_packages",
+    "dist", "build", "out", ".next", ".nuxt", ".output", "target", "bin", "obj",
+    ".git", ".svn", ".hg", ".idea", ".vscode",
+    ".DS_Store", "Thumbs.db",
+    "coverage", ".cache", ".pytest_cache", ".mypy_cache", "htmlcoverage",
+]
+
+DEFAULT_IGNORE_EXTENSIONS = [
+    ".log", ".tmp", ".temp", ".suo", ".user",
+    "package-lock.json", "yarn.lock", "composer.lock", "Pipfile.lock", "poetry.lock",
+]
+
+
+def load_ignore_patterns(current_dir):
+    patterns = set(DEFAULT_IGNORE_PATTERNS)
+    ext_patterns = set(DEFAULT_IGNORE_EXTENSIONS)
+
+    for ignore_file in [".gitignore", ".codientignore"]:
+        ignore_path = os.path.join(current_dir, ignore_file)
+        if os.path.isfile(ignore_path):
+            try:
+                content = read_file(ignore_path)
+                for line in content.splitlines():
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    clean = line.rstrip("/")
+                    if clean.startswith("*."):
+                        ext_patterns.add(clean[1:])
+                    else:
+                        patterns.add(clean)
+            except Exception:
+                pass
+
+    return patterns, ext_patterns
+
+
+def build_tree(current_dir, max_depth=3):
+    """Build a directory tree string, respecting ignore patterns."""
+    ignore_dirs, ignore_exts = load_ignore_patterns(current_dir)
+    lines = [f"{os.path.basename(current_dir)}/"]
+
+    def _walk(path, prefix, depth):
+        if depth > max_depth:
+            return
+        try:
+            entries = sorted(os.listdir(path))
+        except PermissionError:
+            return
+
+        filtered = []
+        for entry in entries:
+            full = os.path.join(path, entry)
+            if entry in ignore_dirs:
+                continue
+            if os.path.isfile(full):
+                _, ext = os.path.splitext(entry)
+                if ext in ignore_exts or entry in ignore_exts:
+                    continue
+            filtered.append(entry)
+
+        for i, entry in enumerate(filtered):
+            is_last = i == len(filtered) - 1
+            connector = "└── " if is_last else "├── "
+            full = os.path.join(path, entry)
+            if os.path.isdir(full):
+                lines.append(f"{prefix}{connector}{entry}/")
+                extension = "    " if is_last else "│   "
+                _walk(full, prefix + extension, depth + 1)
+            else:
+                lines.append(f"{prefix}{connector}{entry}")
+
+    _walk(current_dir, "", 1)
+    return "\n".join(lines)
+
+
 def ensure_dir(path):
     os.makedirs(path, exist_ok=True)
 
@@ -466,7 +544,8 @@ def collect_files(file_list, current_dir):
     return valid_files
 
 
-def build_prompt(question, context_files, valid_files, current_dir):
+def build_prompt(question, context_files, valid_files, current_dir, extra_files=None):
+    tree = build_tree(current_dir)
     full_question = f"""{question}
 
 Rules:
@@ -477,8 +556,16 @@ Rules:
    - For path, use only the filename (e.g. app.py) or a relative path (e.g. utils/helpers.py). Do NOT use absolute paths.
 3. Do NOT include readonly files in the output under any circumstances.
 4. Create new files when the task requires functionality not covered by existing editable files.
+5. If you need the content of additional files not provided here, respond ONLY with a <need_more_info> tag like:
+   <need_more_info reason="explain why" files="file1.py,file2.py" />
+   Do NOT mix <need_more_info> with file output. Use one or the other.
 
 Current working directory: {current_dir}
+
+Project structure:
+```
+{tree}
+```
 """
 
     for file_name in context_files:
@@ -496,6 +583,14 @@ Current working directory: {current_dir}
             full_question += f'\n<file name="{file_name}" path="{file_path}">\n<![CDATA[\n{content}\n]]>\n</file>\n'
         except Exception as e:
             full_question += f"\n⚠️ Error reading file {file_name}: {str(e)}\n"
+
+    if extra_files:
+        for file_name, file_path in extra_files:
+            try:
+                content = read_file(file_path)
+                full_question += f'\n<file name="{file_name}" path="{file_path}">\n<![CDATA[\n{content}\n]]>\n</file>\n'
+            except Exception as e:
+                full_question += f"\n⚠️ Error reading extra file {file_name}: {str(e)}\n"
 
     return full_question
 
@@ -589,6 +684,61 @@ def send_prompt(driver, model, full_question, debug, debug_dir):
     return True
 
 
+def send_follow_up(driver, model, extra_files_content, debug, debug_dir):
+    config = MODEL_CONFIG[model]
+
+    follow_up = "Here are the additional files you requested:\n"
+    for file_name, file_path, content in extra_files_content:
+        follow_up += f'\n<file name="{file_name}" path="{file_path}">\n<![CDATA[\n{content}\n]]>\n</file>\n'
+    follow_up += "\nNow please provide the complete response following the original rules."
+
+    if debug:
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        prompt_debug_path = os.path.join(debug_dir, f"followup_{timestamp}.txt")
+        write_file(prompt_debug_path, follow_up)
+        print(f"🐛 Debug: Follow-up prompt saved to {prompt_debug_path}")
+
+    if model in ("claude", "chatgpt"):
+        follow_up_html = "\n".join(
+            f"<p>{html.escape(line)}</p>"
+            for line in follow_up.splitlines()
+        )
+    else:
+        follow_up_html = follow_up
+
+    wait = WebDriverWait(driver, 60)
+    wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, config["input_selector"])))
+    input_element = driver.find_element(By.CSS_SELECTOR, config["input_selector"])
+
+    input_element.send_keys(" ")
+    time.sleep(1)
+    driver.execute_script(config["fill_script"], input_element, follow_up_html)
+    time.sleep(1)
+    input_element.send_keys(" ")
+
+    send_buttons = driver.find_elements(By.CSS_SELECTOR, config["send_selector"])
+    if send_buttons:
+        send_buttons[config["send_index"]].click()
+        print("📨 Follow-up sent, waiting for response...")
+    else:
+        print("❌ Send button not found for follow-up!")
+        return False
+
+    time.sleep(2)
+
+    while True:
+        done_buttons = driver.find_elements(By.CSS_SELECTOR, config["done_selector"])
+        if config["done_index"]:
+            if len(done_buttons) > config["done_index"]:
+                break
+        else:
+            if done_buttons:
+                break
+        time.sleep(1)
+
+    return True
+
+
 def process_response(driver, model, valid_files, overwrite, backup_dir, report_dir, CURRENT_DIR, question, file_list):
     config = MODEL_CONFIG[model]
     response_selector = config["response_selector"]
@@ -597,22 +747,33 @@ def process_response(driver, model, valid_files, overwrite, backup_dir, report_d
 
     if not responses:
         print("❌ No response received")
-        return
+        return None
 
     try:
-        markdown = driver.find_element(By.CSS_SELECTOR, response_selector)
+        all_responses = driver.find_elements(By.CSS_SELECTOR, response_selector)
+        markdown = all_responses[-1]
+        full_text = markdown.text
+
+        need_more_match = re.search(
+            r'<need_more_info\s+reason="([^"]+)"\s+files="([^"]+)"\s*/?>',
+            full_text
+        )
+        if need_more_match:
+            reason = need_more_match.group(1)
+            requested_files = [f.strip() for f in need_more_match.group(2).split(",")]
+            return {"need_more_info": True, "reason": reason, "files": requested_files}
+
         code_blocks = markdown.find_elements(By.CSS_SELECTOR, "pre")
 
         if not code_blocks:
             print("⚠️ No code blocks found in response")
-            response_text = responses[-1].text
             output_file = os.path.join(CURRENT_DIR, f"full_response_{int(time.time())}.txt")
             with open(output_file, 'w', encoding='utf-8') as f:
                 f.write(f"Question: {question}\n")
-                f.write(f"Files: {', '.join(file_list)}\n")
-                f.write(f"Full response:\n{response_text}\n")
+                f.write(f"Files: {', '.join(file_list) if file_list else 'none'}\n")
+                f.write(f"Full response:\n{full_text}\n")
             print(f"💾 Full response saved to {output_file}")
-            return
+            return None
 
         if len(code_blocks) > 1:
             print("⚠️ Warning: Multiple code blocks found, using first one")
@@ -627,7 +788,7 @@ def process_response(driver, model, valid_files, overwrite, backup_dir, report_d
 
         if not matches:
             print("⚠️ No <file> tags found in XML response")
-            return
+            return None
 
         print(f"✅ {len(matches)} file(s) found in response")
 
@@ -696,8 +857,11 @@ def process_response(driver, model, valid_files, overwrite, backup_dir, report_d
             print(f"📊 Diff report saved: {report_file}")
             webbrowser.open(f"file://{report_file}")
 
+        return {"need_more_info": False}
+
     except Exception as e:
         print(f"❌ Error extracting code: {str(e)}")
+        return None
 
 def main():
     (question, file_list, context_files, overwrite, debug,
@@ -777,8 +941,12 @@ def main():
     try:
         success = send_prompt(driver, model, full_question, debug, debug_dir)
 
-        if success:
-            process_response(
+        if not success:
+            return
+
+        max_rounds = 5
+        for round_num in range(max_rounds):
+            result = process_response(
                 driver,
                 model,
                 valid_files,
@@ -790,7 +958,52 @@ def main():
                 file_list
             )
 
-        print(f"💾 Profile session saved in: {profile_dir}")
+            if result is None:
+                break
+
+            if not result.get("need_more_info"):
+                break
+
+            reason = result["reason"]
+            requested_files = result["files"]
+
+            print(f"\n🔍 AI needs more information (round {round_num + 1}):")
+            print(f"   Reason: {reason}")
+            print(f"   Requested files: {', '.join(requested_files)}")
+            print()
+
+            extra_files_content = []
+            for req_file in requested_files:
+                file_path = os.path.join(current_dir, req_file)
+                if os.path.isfile(file_path):
+                    try:
+                        content = read_file(file_path)
+                        extra_files_content.append((req_file, file_path, content))
+                        print(f"   ✅ Found: {req_file}")
+                    except Exception as e:
+                        print(f"   ❌ Could not read {req_file}: {e}")
+                else:
+                    print(f"   ⚠️  File not found automatically: {req_file}")
+                    user_path = input(f"   📂 Enter full path for '{req_file}' (or press Enter to skip): ").strip()
+                    if user_path and os.path.isfile(user_path):
+                        try:
+                            content = read_file(user_path)
+                            extra_files_content.append((req_file, user_path, content))
+                            print(f"   ✅ Loaded: {user_path}")
+                        except Exception as e:
+                            print(f"   ❌ Could not read {user_path}: {e}")
+                    else:
+                        print(f"   ⏭  Skipping: {req_file}")
+
+            if not extra_files_content:
+                print("\n⚠️  No extra files could be provided. Stopping.")
+                break
+
+            follow_up_ok = send_follow_up(driver, model, extra_files_content, debug, debug_dir)
+            if not follow_up_ok:
+                break
+
+        print(f"\n💾 Profile session saved in: {profile_dir}")
 
     except Exception as e:
         print(f"❌ Error: {str(e)}")
