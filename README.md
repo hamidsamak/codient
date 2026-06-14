@@ -18,6 +18,7 @@ It works by sending your codebase to an automated AI pipeline (Selenium-based br
 - 🌐 Browser automation session (persistent login)
 - 🌐 Proxy support (HTTP / SOCKS5)
 - 👤 Multi-profile Chrome support (separate sessions per account)
+- 🔁 Multi-round AI conversation (automatic file request handling, up to 5 rounds)
 
 ---
 
@@ -86,6 +87,8 @@ codient --browser --model deepseek
 codient "Fix this code" file1.py file2.py
 ```
 
+> Default model is **DeepSeek**. Use `--model` to switch.
+
 ---
 
 ### With overwrite (auto-save changes)
@@ -101,6 +104,8 @@ codient --overwrite "Refactor this code" main.py
 ```bash
 codient "Improve architecture" --context utils.py config.py -- main.py
 ```
+
+> `--` marks the end of context files. Files listed after it are editable targets.
 
 ---
 
@@ -126,6 +131,30 @@ codient --browser
 codient --model claude "Fix this code" app.py
 codient --model chatgpt "Refactor this" main.py
 codient --model deepseek "Optimize this" utils.py
+```
+
+---
+
+## 🔁 Multi-round AI Conversation
+
+If the AI needs additional files to complete the task, it will automatically request them using a `<need_more_info>` signal. Codient handles this interactively:
+
+1. The AI responds with the files it needs and why
+2. Codient looks for those files automatically in the current directory
+3. If a file is not found, you are prompted to enter its path manually
+4. The files are sent as a follow-up and the AI continues
+
+This loop repeats up to **5 rounds** until the AI provides a complete response.
+
+```
+🔍 AI needs more information (round 1):
+   Reason: Need to see the database schema
+   Requested files: models.py, schema.sql
+
+   ✅ Found: models.py
+   ⚠️  File not found automatically: schema.sql
+   📂 Enter full path for 'schema.sql' (or press Enter to skip): /home/user/project/schema.sql
+   ✅ Loaded: /home/user/project/schema.sql
 ```
 
 ---
@@ -162,6 +191,8 @@ codient --list-profiles
 
 If `--profile` is not specified, the `default` profile is used automatically.
 
+> Profile names can only contain letters, numbers, dashes, and underscores.
+
 ---
 
 ## 🧩 CLI Options
@@ -170,6 +201,7 @@ If `--profile` is not specified, the `default` profile is used automatically.
 |------|------------|
 | `--overwrite` | Directly apply AI changes to files (with backup) |
 | `--context` | Add reference files (not modified) |
+| `--` | End of context files list; files after this are editable targets |
 | `--debug` | Save prompt + response HTML for debugging |
 | `--proxy` | Use HTTP/SOCKS5 proxy |
 | `--model` | Select AI model: `claude`, `chatgpt`, `deepseek` (default: `deepseek`) |
@@ -190,7 +222,7 @@ Before any modification, files are automatically backed up:
 ~/.codient/backups/
 ```
 
-You can safely rollback anytime.
+Files in subdirectories are backed up with their relative path preserved. You can safely rollback anytime.
 
 ---
 
@@ -213,7 +245,7 @@ codient --rollback main.py --timestamp 20250101123000
 If `--overwrite` is NOT used:
 
 - No files are modified
-- A visual HTML diff report is generated
+- A visual HTML diff report is generated and saved to `~/.codient/reports/`
 - Automatically opens in browser
 
 ---
@@ -250,7 +282,7 @@ Selenium Automation
 AI Web UI (Claude / ChatGPT / DeepSeek)
    ↓
 AI Response Parsing
-   ↓
+   ↓  (if AI requests more files → follow-up loop, max 5 rounds)
 File System Update / Diff / Backup
 ```
 
