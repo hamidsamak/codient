@@ -19,6 +19,7 @@ It works by sending your codebase to an automated AI pipeline (Selenium-based br
 - 🌐 Proxy support (HTTP / SOCKS5)
 - 👤 Multi-profile Chrome support (separate sessions per account)
 - 🔁 Multi-round AI conversation (automatic file request handling, up to 5 rounds)
+- ⚡ Non-interactive mode (auto-skip missing files, suitable for CI/VSCode)
 
 ---
 
@@ -157,6 +158,8 @@ This loop repeats up to **5 rounds** until the AI provides a complete response.
    ✅ Loaded: /home/user/project/schema.sql
 ```
 
+> In `--non-interactive` mode, if a requested file is not found, no prompt is shown. Instead, the AI is informed that the file does not exist and should create it from scratch.
+
 ---
 
 ## 👤 Profiles
@@ -211,6 +214,7 @@ If `--profile` is not specified, the `default` profile is used automatically.
 | `--history FILE` | Show backup history |
 | `--rollback FILE` | Restore previous file version |
 | `--timestamp` | Restore specific version |
+| `--non-interactive` | Skip interactive prompts; auto-skip missing files (useful for VSCode/CI) |
 
 ---
 
