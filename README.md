@@ -25,6 +25,8 @@ It works by sending your codebase to an automated AI pipeline (Selenium-based br
 
 ## 🚀 Installation
 
+> 🪟 **Using WSL Ubuntu?** See [docs/WSL_SETUP.md](docs/WSL_SETUP.md) for Chrome/ChromeDriver setup steps specific to WSL.
+
 ### 1. Clone the repository
 
 ```bash
@@ -52,6 +54,7 @@ Make sure you also have:
 ### 3. Add to PATH (run from inside the cloned folder)
 
 ```bash
+mkdir -p ~/.local/bin
 cat > ~/.local/bin/codient << EOF
 #!/bin/bash
 exec "$(pwd)/venv/bin/python" "$(pwd)/codient" "\$@"
@@ -63,6 +66,7 @@ chmod +x ~/.local/bin/codient
 > ```bash
 > echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 > ```
+
 
 ---
 
