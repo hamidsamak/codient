@@ -10,6 +10,7 @@ import os
 import sys
 import time
 import html
+import shutil
 import difflib
 import webbrowser
 import glob
@@ -327,6 +328,7 @@ def print_usage():
     --proxy PROXY       Use HTTP/SOCKS proxy (e.g. http://127.0.0.1:10808 or socks5://127.0.0.1:10808)
     --model MODEL       AI model to use (choices: claude, chatgpt, deepseek) [default: deepseek]
     --profile NAME      Chrome profile to use (default: "default")
+    --chromedriver-path PATH  Explicit path to chromedriver binary (skips auto-detection)
     --non-interactive   Skip interactive prompts; auto-skip missing files (useful for VSCode/CI)
     --                  End of context files list
 
@@ -356,6 +358,7 @@ def print_usage():
     codient --debug "Add comments" script.py
     codient --model claude "Add error handling" app.py
     codient --profile work --model chatgpt "Refactor" app.py
+    codient --chromedriver-path /usr/local/bin/chromedriver "Fix bug" app.py
     codient --browser
     codient --browser --profile work
     codient --list-profiles
@@ -389,6 +392,35 @@ def list_profiles(profiles_base_dir):
     print("=" * 50)
 
 
+def find_chromedriver(explicit_path=None):
+    if explicit_path:
+        if os.path.isfile(explicit_path) and os.access(explicit_path, os.X_OK):
+            return explicit_path
+        print(f"⚠️ --chromedriver-path '{explicit_path}' not found or not executable, falling back to auto-detection")
+
+    env_path = os.environ.get("CHROMEDRIVER_PATH")
+    if env_path and os.path.isfile(env_path) and os.access(env_path, os.X_OK):
+        return env_path
+
+    path_in_env = shutil.which("chromedriver")
+    if path_in_env:
+        return path_in_env
+
+    common_paths = [
+        "/usr/bin/chromedriver",
+        "/usr/local/bin/chromedriver",
+        "/opt/homebrew/bin/chromedriver",
+        "/opt/chromedriver/chromedriver",
+        os.path.expanduser("~/.local/bin/chromedriver"),
+        os.path.expanduser("~/.wdm/drivers/chromedriver"),
+    ]
+    for p in common_paths:
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+
+    return None
+
+
 def parse_args():
     overwrite = False
     context_files = []
@@ -404,10 +436,22 @@ def parse_args():
     model = "deepseek"
     profile = "default"
     non_interactive = False
+    chromedriver_path = None
 
     if "--non-interactive" in sys.argv:
         non_interactive = True
         sys.argv.remove("--non-interactive")
+
+    if "--chromedriver-path" in sys.argv:
+        cdp_index = sys.argv.index("--chromedriver-path")
+        if cdp_index + 1 < len(sys.argv):
+            chromedriver_path = sys.argv[cdp_index + 1]
+        else:
+            print("❌ Error: Please specify path after --chromedriver-path")
+            sys.exit(1)
+
+        sys.argv.remove("--chromedriver-path")
+        sys.argv.remove(chromedriver_path)
 
     if "--proxy" in sys.argv:
         proxy_index = sys.argv.index("--proxy")
@@ -451,13 +495,15 @@ def parse_args():
         list_profiles_mode = True
         return (None, None, None, None, None,
                 history_mode, rollback_mode, target_file, None,
-                browser_only_mode, proxy, model, profile, list_profiles_mode, non_interactive)
+                browser_only_mode, proxy, model, profile, list_profiles_mode, non_interactive,
+                chromedriver_path)
 
     if "--browser" in sys.argv:
         browser_only_mode = True
         return (None, None, None, None, None,
                 history_mode, rollback_mode, target_file, None,
-                browser_only_mode, proxy, model, profile, list_profiles_mode, non_interactive)
+                browser_only_mode, proxy, model, profile, list_profiles_mode, non_interactive,
+                chromedriver_path)
 
     if "--history" in sys.argv:
         history_mode = True
@@ -469,7 +515,8 @@ def parse_args():
             sys.exit(1)
         return (None, None, None, None, None,
                 history_mode, rollback_mode, target_file, None,
-                browser_only_mode, proxy, model, profile, list_profiles_mode, non_interactive)
+                browser_only_mode, proxy, model, profile, list_profiles_mode, non_interactive,
+                chromedriver_path)
 
     if "--rollback" in sys.argv:
         rollback_mode = True
@@ -487,7 +534,8 @@ def parse_args():
 
         return (None, None, None, None, None,
                 history_mode, rollback_mode, target_file, rollback_timestamp,
-                browser_only_mode, proxy, model, profile, list_profiles_mode, non_interactive)
+                browser_only_mode, proxy, model, profile, list_profiles_mode, non_interactive,
+                chromedriver_path)
 
     if "--overwrite" in sys.argv:
         overwrite = True
@@ -527,7 +575,8 @@ def parse_args():
 
     return (question, cleaned_args, context_files, overwrite, debug,
             history_mode, rollback_mode, target_file, rollback_timestamp,
-            browser_only_mode, proxy, model, profile, list_profiles_mode, non_interactive)
+            browser_only_mode, proxy, model, profile, list_profiles_mode, non_interactive,
+            chromedriver_path)
 
 
 def collect_files(file_list, current_dir):
@@ -601,13 +650,10 @@ Project structure:
 
     return full_question
 
-def create_driver(profile_dir, proxy):
-    CHROMEDRIVER_PATH = "/usr/bin/chromedriver"
-
+def create_driver(profile_dir, proxy, chromedriver_path=None):
     ensure_dir(profile_dir)
 
     print(f"📁 Using profile: {profile_dir}")
-
     print("🚀 Launching browser...")
 
     options = webdriver.ChromeOptions()
@@ -627,7 +673,15 @@ def create_driver(profile_dir, proxy):
     }
     options.add_experimental_option("prefs", prefs)
 
-    service = Service(executable_path=CHROMEDRIVER_PATH)
+    resolved_path = find_chromedriver(chromedriver_path)
+
+    if resolved_path:
+        print(f"🧭 Using chromedriver: {resolved_path}")
+        service = Service(executable_path=resolved_path)
+    else:
+        print("🧭 chromedriver not found locally — letting Selenium Manager resolve it automatically")
+        service = Service()
+
     return webdriver.Chrome(service=service, options=options)
 
 
@@ -879,7 +933,8 @@ def process_response(driver, model, valid_files, overwrite, backup_dir, report_d
 def main():
     (question, file_list, context_files, overwrite, debug,
      history_mode, rollback_mode, target_file, rollback_timestamp,
-     browser_only_mode, proxy, model, profile, list_profiles_mode, non_interactive) = parse_args()
+     browser_only_mode, proxy, model, profile, list_profiles_mode, non_interactive,
+     chromedriver_path) = parse_args()
 
     current_dir = os.getcwd()
     HOME_DIR = os.path.expanduser("~")
@@ -905,7 +960,7 @@ def main():
         print("🔒 Session cookies will be saved.")
         print("❌ Close the browser window when you're done.\n")
 
-        driver = create_driver(profile_dir, proxy)
+        driver = create_driver(profile_dir, proxy, chromedriver_path)
         driver.get(MODEL_CONFIG[model]["url"])
 
         try:
@@ -952,7 +1007,7 @@ def main():
 
     CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
-    driver = create_driver(profile_dir, proxy)
+    driver = create_driver(profile_dir, proxy, chromedriver_path)
 
     try:
         success = send_prompt(driver, model, full_question, debug, debug_dir)
