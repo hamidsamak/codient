@@ -715,6 +715,8 @@ def send_prompt(driver, model, full_question, debug, debug_dir):
     input_element.send_keys(" ")
     print("✅ Question and file content sent")
 
+    old_count = len(driver.find_elements(By.CSS_SELECTOR, config["response_selector"]))
+
     send_buttons = driver.find_elements(By.CSS_SELECTOR, config["send_selector"])
     if send_buttons:
         send_buttons[config["send_index"]].click()
@@ -723,7 +725,7 @@ def send_prompt(driver, model, full_question, debug, debug_dir):
         print("❌ Send button not found!")
         return False
 
-    wait.until(EC.invisibility_of_element_located((By.CSS_SELECTOR, config["response_selector"])))
+    wait.until(lambda d: len(d.find_elements(By.CSS_SELECTOR, config["response_selector"])) > old_count)
     time.sleep(1)
 
     while True:
