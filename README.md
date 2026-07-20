@@ -4,6 +4,15 @@ Codient is a powerful **command-line AI coding assistant** powered by **Claude, 
 
 It works by sending your codebase to an automated AI pipeline (Selenium-based browser session) and returning structured results, including safe file updates, diffs, backups, and rollback support.
 
+## 🎥 Tutorial
+
+Learn how to install and use Codient as an AI coding assistant:
+
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=7rxg5bH-JLo">
+    <img src="https://img.youtube.com/vi/7rxg5bH-JLo/maxresdefault.jpg" width="600">
+  </a>
+</p>
 ---
 
 ## ✨ Features
