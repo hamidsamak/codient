@@ -615,6 +615,7 @@ Rules:
 5. If you need the content of additional files not provided here, respond ONLY with a <need_more_info> tag like:
    <need_more_info reason="explain why" files="file1.py,file2.py" />
    Do NOT mix <need_more_info> with file output. Use one or the other.
+6. When action="edit", the <file> content MUST be the ENTIRE file after applying the changes — full file, top to bottom, not just the modified lines, not a diff/patch, and not partial snippets with placeholders like "// ... rest unchanged". The output must be a complete, valid, ready-to-save replacement for the original file.
 
 Current working directory: {current_dir}
 
