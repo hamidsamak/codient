@@ -13,6 +13,7 @@ Learn how to install and use Codient as an AI coding assistant:
     <img src="https://img.youtube.com/vi/7rxg5bH-JLo/maxresdefault.jpg" width="600">
   </a>
 </p>
+
 ---
 
 ## ✨ Features
