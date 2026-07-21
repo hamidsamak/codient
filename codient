@@ -141,6 +141,76 @@ def write_file(path, content):
         f.write(content)
 
 
+def number_lines(content):
+    """Prefix each line of content with its 1-indexed line number, for accurate hunk targeting."""
+    lines = content.splitlines()
+    if not lines:
+        return content
+    width = len(str(len(lines)))
+    numbered = [f"{str(i + 1).rjust(width)}: {line}" for i, line in enumerate(lines)]
+    return "\n".join(numbered)
+
+
+def parse_hunks(content):
+    """Parse <hunk op="replace|add|delete" .../> tags out of a <file> body."""
+    hunk_pattern = re.compile(
+        r'<hunk\s+op="(?P<op>replace|add|delete)"'
+        r'(?:\s+start="(?P<start>\d+)")?'
+        r'(?:\s+end="(?P<end>\d+)")?'
+        r'(?:\s+after="(?P<after>\d+)")?'
+        r'\s*(?:/>|>(?:<!\[CDATA\[)?(?P<content>.*?)(?:\]\]>)?\s*</hunk>)',
+        re.DOTALL
+    )
+
+    hunks = []
+    for m in hunk_pattern.finditer(content):
+        op = m.group("op")
+        h = {"op": op}
+
+        if op in ("replace", "delete"):
+            if m.group("start") is None or m.group("end") is None:
+                continue
+            h["start"] = int(m.group("start"))
+            h["end"] = int(m.group("end"))
+
+        if op == "add":
+            if m.group("after") is None:
+                continue
+            h["after"] = int(m.group("after"))
+
+        if op in ("replace", "add"):
+            h["content"] = (m.group("content") or "").strip("\n")
+
+        hunks.append(h)
+
+    return hunks
+
+
+def apply_hunks(old_content, hunks):
+    """Apply a list of line-based replace/add/delete hunks to old_content."""
+    lines = old_content.splitlines()
+
+    def sort_key(h):
+        return h["after"] if h["op"] == "add" else h["start"]
+
+    # Apply from bottom to top so earlier line numbers stay valid for later hunks.
+    for h in sorted(hunks, key=sort_key, reverse=True):
+        if h["op"] == "replace":
+            new_lines = h["content"].split("\n") if h["content"] else []
+            lines[h["start"] - 1:h["end"]] = new_lines
+        elif h["op"] == "delete":
+            del lines[h["start"] - 1:h["end"]]
+        elif h["op"] == "add":
+            new_lines = h["content"].split("\n") if h["content"] else []
+            pos = h["after"]
+            lines[pos:pos] = new_lines
+
+    result = "\n".join(lines)
+    if old_content.endswith("\n") and not result.endswith("\n"):
+        result += "\n"
+    return result
+
+
 def show_history(backup_dir, file_name):
     base_name = os.path.splitext(file_name)[0]
     ext = os.path.splitext(file_name)[1]
@@ -615,7 +685,23 @@ Rules:
 5. If you need the content of additional files not provided here, respond ONLY with a <need_more_info> tag like:
    <need_more_info reason="explain why" files="file1.py,file2.py" />
    Do NOT mix <need_more_info> with file output. Use one or the other.
-6. When action="edit", the <file> content MUST be the ENTIRE file after applying the changes — full file, top to bottom, not just the modified lines, not a diff/patch, and not partial snippets with placeholders like "// ... rest unchanged". The output must be a complete, valid, ready-to-save replacement for the original file.
+6. For action="create", the <file> content MUST be the ENTIRE new file content, top to bottom, wrapped in CDATA:
+   <file name="new.py" path="new.py" action="create"><![CDATA[
+   ...full new file content...
+   ]]></file>
+7. For action="edit", do NOT return the whole file and do NOT put raw file content directly inside <file>. Instead, return ONLY the changed portions as one or more <hunk> tags nested inside <file>. Line numbers ALWAYS refer to the ORIGINAL line numbers shown in the numbered file listing below, never to a version already modified by another hunk in the same response:
+   - Replace original lines N..M (inclusive) with new content:
+     <hunk op="replace" start="N" end="M"><![CDATA[
+     ...new lines...
+     ]]></hunk>
+   - Insert new lines immediately after original line N (use after="0" to insert before the first line):
+     <hunk op="add" after="N"><![CDATA[
+     ...new lines...
+     ]]></hunk>
+   - Delete original lines N..M (inclusive), no content needed:
+     <hunk op="delete" start="N" end="M" />
+   - Hunks for the same file must not overlap. Double-check start/end/after numbers against the numbered source below — precision is critical.
+8. The "N: " line-number prefix shown for each editable file below is for your reference ONLY, to compute accurate hunk positions. It is NOT part of the actual file content and must never appear inside <hunk> content.
 
 Current working directory: {current_dir}
 
@@ -637,7 +723,8 @@ Project structure:
     for file_name, file_path in valid_files:
         try:
             content = read_file(file_path)
-            full_question += f'\n<file name="{file_name}" path="{file_path}">\n<![CDATA[\n{content}\n]]>\n</file>\n'
+            numbered_content = number_lines(content)
+            full_question += f'\n<file name="{file_name}" path="{file_path}">\n<![CDATA[\n{numbered_content}\n]]>\n</file>\n'
         except Exception as e:
             full_question += f"\n⚠️ Error reading file {file_name}: {str(e)}\n"
 
@@ -645,7 +732,8 @@ Project structure:
         for file_name, file_path in extra_files:
             try:
                 content = read_file(file_path)
-                full_question += f'\n<file name="{file_name}" path="{file_path}">\n<![CDATA[\n{content}\n]]>\n</file>\n'
+                numbered_content = number_lines(content)
+                full_question += f'\n<file name="{file_name}" path="{file_path}">\n<![CDATA[\n{numbered_content}\n]]>\n</file>\n'
             except Exception as e:
                 full_question += f"\n⚠️ Error reading extra file {file_name}: {str(e)}\n"
 
@@ -753,7 +841,8 @@ def send_follow_up(driver, model, extra_files_content, debug, debug_dir, missing
 
     follow_up = "Here are the additional files you requested:\n"
     for file_name, file_path, content in extra_files_content:
-        follow_up += f'\n<file name="{file_name}" path="{file_path}">\n<![CDATA[\n{content}\n]]>\n</file>\n'
+        numbered_content = number_lines(content)
+        follow_up += f'\n<file name="{file_name}" path="{file_path}">\n<![CDATA[\n{numbered_content}\n]]>\n</file>\n'
 
     if missing_files:
         follow_up += "\nThe following files do not exist yet and must be created by you from scratch:\n"
@@ -868,7 +957,7 @@ def process_response(driver, model, valid_files, overwrite, backup_dir, report_d
             file_name = match.group("name")
             file_path = match.group("path")
             action = (match.group("action") or "edit").lower()
-            code_content = match.group("content").strip()
+            raw_content = match.group("content").strip()
 
             if not os.path.isabs(file_path):
                 file_path = os.path.join(os.getcwd(), file_path)
@@ -899,6 +988,16 @@ def process_response(driver, model, valid_files, overwrite, backup_dir, report_d
                 ensure_dir(os.path.dirname(backup_path))
                 write_file(backup_path, old_content)
                 print(f"🗂 Backup: {backup_path}")
+
+            if is_new_file:
+                code_content = raw_content
+            else:
+                hunks = parse_hunks(raw_content)
+                if not hunks:
+                    print(f"⚠️ No <hunk> tags found for '{file_name}' — skipping (nothing applied)")
+                    continue
+                code_content = apply_hunks(old_content, hunks)
+                print(f"🧩 Applied {len(hunks)} hunk(s) to '{file_name}'")
 
             if overwrite:
                 ensure_dir(os.path.dirname(os.path.abspath(file_path)))
