@@ -1,6 +1,6 @@
 # Codient – CLI AI Code Assistant
 
-Codient is a powerful **command-line AI coding assistant** powered by **Claude, ChatGPT, and DeepSeek**, designed to analyze, refactor, debug, and generate code directly from your terminal.
+Codient is a powerful **command-line AI coding assistant** powered by **Claude, ChatGPT, Gemini, and DeepSeek**, designed to analyze, refactor, debug, and generate code directly from your terminal.
 
 It works by sending your codebase to an automated AI pipeline (Selenium-based browser session) and returning structured results, including safe file updates, diffs, backups, and rollback support.
 
@@ -18,7 +18,7 @@ Learn how to install and use Codient as an AI coding assistant:
 
 ## ✨ Features
 
-- 🤖 Multi-model AI support (Claude, ChatGPT, DeepSeek)
+- 🤖 Multi-model AI support (Claude, ChatGPT, Gemini, DeepSeek)
 - 📂 Multi-file project support
 - 🧠 Context-aware prompting system
 - 💾 Safe overwrite mode with automatic backups
@@ -86,6 +86,7 @@ Before first use, open a browser session for each model you want to use and log 
 
 ```bash
 codient --browser --model claude
+codient --browser --model gemini
 codient --browser --model chatgpt
 codient --browser --model deepseek
 ```
@@ -144,6 +145,7 @@ codient --browser
 
 ```bash
 codient --model claude "Fix this code" app.py
+codient --model gemini "Error handling" app.py
 codient --model chatgpt "Refactor this" main.py
 codient --model deepseek "Optimize this" utils.py
 ```
@@ -221,7 +223,7 @@ If `--profile` is not specified, the `default` profile is used automatically.
 | `--` | End of context files list; files after this are editable targets |
 | `--debug` | Save prompt + response HTML for debugging |
 | `--proxy` | Use HTTP/SOCKS5 proxy |
-| `--model` | Select AI model: `claude`, `chatgpt`, `deepseek` (default: `deepseek`) |
+| `--model` | Select AI model: `claude`, `chatgpt`, `gemini`, `deepseek` (default: `deepseek`) |
 | `--profile` | Chrome profile to use (default: `default`) |
 | `--browser` | Open persistent login session |
 | `--list-profiles` | List all existing profiles |
@@ -297,7 +299,7 @@ Python Engine
    ↓
 Selenium Automation
    ↓
-AI Web UI (Claude / ChatGPT / DeepSeek)
+AI Web UI (Claude / ChatGPT / Gemini / DeepSeek)
    ↓
 AI Response Parsing
    ↓  (if AI requests more files → follow-up loop, max 5 rounds)
@@ -312,4 +314,4 @@ File System Update / Diff / Backup
 - Google Chrome
 - ChromeDriver
 - Internet connection
-- Access to Claude, ChatGPT, or DeepSeek
+- Access to Claude, ChatGPT, Gemini, or DeepSeek

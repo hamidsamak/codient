@@ -37,6 +37,16 @@ MODEL_CONFIG = {
         "done_selector":     "button[aria-label='Start Voice']",
         "done_index":        None,
     },
+    "gemini": {
+        "url":               "https://gemini.google.com/app",
+        "input_selector":    "div[contenteditable='true']",
+        "fill_script":       "arguments[0].textContent = arguments[1];",
+        "response_selector": ".markdown",
+        "send_selector":     "button[aria-label='Send message']",
+        "send_index":        0,
+        "done_selector":     "button[aria-label='Microphone']",
+        "done_index":        None,
+    },
     "deepseek": {
         "url":               "https://chat.deepseek.com/",
         "input_selector":    "textarea",
@@ -396,7 +406,7 @@ def print_usage():
     --context FILE      Add read-only context file
     --debug             Enable debug mode (saves prompt, input, and response HTML)
     --proxy PROXY       Use HTTP/SOCKS proxy (e.g. http://127.0.0.1:10808 or socks5://127.0.0.1:10808)
-    --model MODEL       AI model to use (choices: claude, chatgpt, deepseek) [default: deepseek]
+    --model MODEL       AI model to use (choices: claude, chatgpt, gemini, deepseek) [default: deepseek]
     --profile NAME      Chrome profile to use (default: "default")
     --chromedriver-path PATH  Explicit path to chromedriver binary (skips auto-detection)
     --non-interactive   Skip interactive prompts; auto-skip missing files (useful for VSCode/CI)
@@ -538,8 +548,8 @@ def parse_args():
         model_index = sys.argv.index("--model")
         if model_index + 1 < len(sys.argv):
             model = sys.argv[model_index + 1].lower()
-            if model not in ("claude", "chatgpt", "deepseek"):
-                print("❌ Error: Invalid model. Choices are: claude, chatgpt, deepseek")
+            if model not in ("claude", "chatgpt", "gemini", "deepseek"):
+                print("❌ Error: Invalid model. Choices are: claude, chatgpt, gemini, deepseek")
                 sys.exit(1)
         else:
             print("❌ Error: Please specify model after --model")
