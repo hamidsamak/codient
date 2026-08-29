@@ -14,6 +14,7 @@ import shutil
 import difflib
 import webbrowser
 import glob
+import hashlib
 from datetime import datetime
 
 MODEL_CONFIG = {
@@ -59,11 +60,11 @@ MODEL_CONFIG = {
         "input_selector":           "textarea",
         "fill_script":              "arguments[0].value = arguments[1];",
         "response_selector":        ".ds-markdown",
-        "send_selector":            "div[role='button']",
-        "send_index":               -1,
-        "done_selector_exists":     ".ds-virtual-list .ds-button--iconLabelTertiary",
+        "send_selector":            "div > div[role=button].ds-button.ds-button--primary",
+        "send_index":               0,
+        "done_selector_exists":     "div > div[role=button].ds-button.ds-button--primary.ds-button--disabled",
         "done_selector_not_exists": None,
-        "done_index":               6,
+        "done_index":               None,
     },
 }
 
@@ -853,6 +854,31 @@ def create_driver(profile_dir, proxy, chromedriver_path=None):
     return webdriver.Chrome(service=service, options=options)
 
 
+def get_last_response_fingerprint(driver, selector):
+    elements = driver.find_elements(By.CSS_SELECTOR, selector)
+    if not elements:
+        return (0, None)
+    text = elements[-1].text
+    return (len(elements), hashlib.md5(text.encode("utf-8")).hexdigest())
+
+
+def wait_for_new_response(driver, selector, old_fingerprint, timeout=600):
+    old_count, old_hash = old_fingerprint
+    wait = WebDriverWait(driver, timeout)
+
+    def _changed(d):
+        elements = d.find_elements(By.CSS_SELECTOR, selector)
+        if not elements:
+            return False
+        new_count = len(elements)
+        if new_count != old_count:
+            return True
+        new_hash = hashlib.md5(elements[-1].text.encode("utf-8")).hexdigest()
+        return new_hash != old_hash
+
+    wait.until(_changed)
+
+
 def send_prompt(driver, model, full_question, debug, debug_dir, chat_id=None):
     target_url = resolve_target_url(model, chat_id)
     if chat_id:
@@ -887,7 +913,7 @@ def send_prompt(driver, model, full_question, debug, debug_dir, chat_id=None):
     input_element.send_keys(" ")
     print("✅ Question and file content sent")
 
-    old_count = len(driver.find_elements(By.CSS_SELECTOR, config["response_selector"]))
+    old_fingerprint = get_last_response_fingerprint(driver, config["response_selector"])
 
     send_buttons = driver.find_elements(By.CSS_SELECTOR, config["send_selector"])
     if send_buttons:
@@ -897,7 +923,7 @@ def send_prompt(driver, model, full_question, debug, debug_dir, chat_id=None):
         print("❌ Send button not found!")
         return False
 
-    wait.until(lambda d: len(d.find_elements(By.CSS_SELECTOR, config["response_selector"])) > old_count)
+    wait_for_new_response(driver, config["response_selector"], old_fingerprint)
     time.sleep(1)
 
     wait_for_generation_done(driver, config)
