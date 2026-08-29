@@ -18,48 +18,52 @@ from datetime import datetime
 
 MODEL_CONFIG = {
     "claude": {
-        "url":               "https://claude.ai/new",
-        "chat_url_template": "https://claude.ai/chat/{chat_id}",
-        "input_selector":    "div[contenteditable='true']",
-        "fill_script":       "arguments[0].innerHTML = arguments[1];",
-        "response_selector": ".standard-markdown",
-        "send_selector":     "button[aria-label='Send message']",
-        "send_index":        0,
-        "done_selector":     "button[aria-label='Dictate']",
-        "done_index":        None,
+        "url":                      "https://claude.ai/new",
+        "chat_url_template":        "https://claude.ai/chat/{chat_id}",
+        "input_selector":           "div[contenteditable='true']",
+        "fill_script":              "arguments[0].innerHTML = arguments[1];",
+        "response_selector":        ".standard-markdown",
+        "send_selector":            "button[aria-label='Send message']",
+        "send_index":               0,
+        "done_selector_exists":     "button[aria-label='Dictate']",
+        "done_selector_not_exists": "button[aria-label='Stop response']",
+        "done_index":               None,
     },
     "chatgpt": {
-        "url":               "https://chatgpt.com/",
-        "chat_url_template": "https://chatgpt.com/c/{chat_id}",
-        "input_selector":    "div[contenteditable='true']",
-        "fill_script":       "arguments[0].innerHTML = arguments[1];",
-        "response_selector": ".markdown",
-        "send_selector":     "button[aria-label='Send prompt']",
-        "send_index":        0,
-        "done_selector":     "button[aria-label='Start Voice']",
-        "done_index":        None,
+        "url":                      "https://chatgpt.com/",
+        "chat_url_template":        "https://chatgpt.com/c/{chat_id}",
+        "input_selector":           "div[contenteditable='true']",
+        "fill_script":              "arguments[0].innerHTML = arguments[1];",
+        "response_selector":        ".markdown",
+        "send_selector":            "button[aria-label='Send prompt']",
+        "send_index":               0,
+        "done_selector_exists":     "button[aria-label='Start Voice']",
+        "done_selector_not_exists": None,
+        "done_index":               None,
     },
     "gemini": {
-        "url":               "https://gemini.google.com/app",
-        "chat_url_template": "https://gemini.google.com/app/{chat_id}",
-        "input_selector":    "div[contenteditable='true']",
-        "fill_script":       "arguments[0].textContent = arguments[1];",
-        "response_selector": ".markdown",
-        "send_selector":     "button[aria-label='Send message']",
-        "send_index":        0,
-        "done_selector":     "button[aria-label='Microphone']",
-        "done_index":        None,
+        "url":                      "https://gemini.google.com/app",
+        "chat_url_template":        "https://gemini.google.com/app/{chat_id}",
+        "input_selector":           "div[contenteditable='true']",
+        "fill_script":              "arguments[0].textContent = arguments[1];",
+        "response_selector":        ".markdown",
+        "send_selector":            "button[aria-label='Send message']",
+        "send_index":               0,
+        "done_selector_exists":     "button[aria-label='Microphone']",
+        "done_selector_not_exists": None,
+        "done_index":               None,
     },
     "deepseek": {
-        "url":               "https://chat.deepseek.com/",
-        "chat_url_template": "https://chat.deepseek.com/a/chat/s/{chat_id}",
-        "input_selector":    "textarea",
-        "fill_script":       "arguments[0].value = arguments[1];",
-        "response_selector": ".ds-markdown",
-        "send_selector":     "div[role='button']",
-        "send_index":        -1,
-        "done_selector":     ".ds-virtual-list .ds-button--iconLabelTertiary",
-        "done_index":        6,
+        "url":                      "https://chat.deepseek.com/",
+        "chat_url_template":        "https://chat.deepseek.com/a/chat/s/{chat_id}",
+        "input_selector":           "textarea",
+        "fill_script":              "arguments[0].value = arguments[1];",
+        "response_selector":        ".ds-markdown",
+        "send_selector":            "div[role='button']",
+        "send_index":               -1,
+        "done_selector_exists":     ".ds-virtual-list .ds-button--iconLabelTertiary",
+        "done_selector_not_exists": None,
+        "done_index":               6,
     },
 }
 
@@ -521,6 +525,39 @@ def resolve_target_url(model, chat_id=None):
     return config["url"]
 
 
+def is_generation_done(driver, config):
+    exists_selector = config.get("done_selector_exists")
+    not_exists_selector = config.get("done_selector_not_exists")
+    done_index = config.get("done_index")
+
+    if not exists_selector and not not_exists_selector:
+        return False
+
+    if exists_selector:
+        exists_buttons = driver.find_elements(By.CSS_SELECTOR, exists_selector)
+        if done_index:
+            exists_ok = len(exists_buttons) > done_index
+        else:
+            exists_ok = bool(exists_buttons)
+
+        if not exists_ok:
+            return False
+
+    if not_exists_selector:
+        not_exists_buttons = driver.find_elements(By.CSS_SELECTOR, not_exists_selector)
+        if not_exists_buttons:
+            return False
+
+    return True
+
+
+def wait_for_generation_done(driver, config, poll_interval=1):
+    while True:
+        if is_generation_done(driver, config):
+            break
+        time.sleep(poll_interval)
+
+
 def parse_args():
     overwrite = False
     context_files = []
@@ -863,15 +900,7 @@ def send_prompt(driver, model, full_question, debug, debug_dir, chat_id=None):
     wait.until(lambda d: len(d.find_elements(By.CSS_SELECTOR, config["response_selector"])) > old_count)
     time.sleep(1)
 
-    while True:
-        done_buttons = driver.find_elements(By.CSS_SELECTOR, config["done_selector"])
-        if config["done_index"]:
-            if len(done_buttons) > config["done_index"]:
-                break
-        else:
-            if done_buttons:
-                break
-        time.sleep(1)
+    wait_for_generation_done(driver, config)
 
     if not chat_id:
         new_chat_url = driver.current_url
@@ -936,15 +965,7 @@ def send_follow_up(driver, model, extra_files_content, debug, debug_dir, missing
 
     time.sleep(2)
 
-    while True:
-        done_buttons = driver.find_elements(By.CSS_SELECTOR, config["done_selector"])
-        if config["done_index"]:
-            if len(done_buttons) > config["done_index"]:
-                break
-        else:
-            if done_buttons:
-                break
-        time.sleep(1)
+    wait_for_generation_done(driver, config)
 
     return True
 
