@@ -25,7 +25,7 @@ MODEL_CONFIG = {
         "response_selector": ".standard-markdown",
         "send_selector":     "button[aria-label='Send message']",
         "send_index":        0,
-        "done_selector":     "button[aria-label='Use voice mode']",
+        "done_selector":     "button[aria-label='Dictate']",
         "done_index":        None,
     },
     "chatgpt": {
