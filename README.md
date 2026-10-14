@@ -1,51 +1,72 @@
-# Codient – AI Code Assistant for VSCode
+# Codient – AI Code Assistant for VS Code
 
-Codient is a command-line driven Visual Studio Code extension that integrates **Claude, ChatGPT, Gemini, and DeepSeek** (via the Codient CLI) to analyze, refactor, and generate code directly from your workspace.
+Codient is a standalone Visual Studio Code extension that brings **Claude, ChatGPT, Gemini, and DeepSeek** into your editor to analyze, refactor, debug, and generate code directly from your workspace.
 
-It is designed for real-world development workflows, supporting multi-file analysis, context injection, rollback history, safe overwrite, and browser-based sessions.
+It is built for real-world development workflows: multi-file analysis, safe edits with automatic backups, change preview, and persistent browser-based sessions.
 
-## 🎥 Tutorial
+![Codient demo](https://raw.githubusercontent.com/hamidsamak/codient/main/docs/demo.gif)
 
-Learn how to install and use Codient as an AI coding assistant:
-
-<p align="center">
-  <a href="https://www.youtube.com/watch?v=7rxg5bH-JLo">
-    <img src="https://img.youtube.com/vi/7rxg5bH-JLo/maxresdefault.jpg" width="600" alt="Codient Tutorial">
-  </a>
-</p>
+[Installation](#installation) · [Features](#features) · [Chat](#chat) · [Commands](#commands) · [Settings](#settings) · [Profiles](#profiles)
 
 ---
 
-## ✨ Features
+## Installation
 
-- 🤖 Multi-model AI support (Claude, ChatGPT, Gemini, DeepSeek) via Codient CLI
-- 📂 Analyze single or multiple files
-- 🧠 Composite mode for multi-file understanding
-- 📌 Optional context file injection
+Install Codient from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=hamidsamak.codient), or search for **Codient** in the Extensions view (`Ctrl+Shift+X`).
+
+You can also download the latest `.vsix` from the [Releases](https://github.com/hamidsamak/codient/releases) page and install it with:
+
+```bash
+code --install-extension codient-*.vsix
+```
+
+---
+
+## Features
+
+- 🤖 Multi-model AI support (Claude, ChatGPT, Gemini, DeepSeek)
+- 💬 Sidebar chat view with a keyboard shortcut
+- 📂 Analyze and edit single or multiple files
+- 📌 Preselect the files to edit, with a clear-selection button
+- 🔍 Read-only shell commands for project exploration before edits
 - 💾 Safe overwrite mode with automatic backups
-- 🔄 File history & rollback system
+- 👁️ Preview changes before applying them
+- 🔁 Retry button for failed messages
+- 📝 Prompt draft is preserved when the webview reloads
 - 🌐 Browser session mode (persistent login)
-- 📊 HTML diff report generation
-- 🐛 Debug mode (prompt + response logging)
-- 🌐 Proxy support (HTTP / SOCKS5)
 - 👤 Multi-profile Chrome support (separate sessions per account)
+- 🛰️ Proxy support (HTTP / SOCKS5)
+- 🎛️ Configurable file extensions and excluded directories
 
 ---
 
-## 🚀 Commands
+## Chat
+
+Open the Codient chat from the activity bar, or press:
+
+- Windows/Linux: `Ctrl + Shift + C`
+- Mac: `Cmd + Alt + C`
+
+From the chat you can write a prompt, choose the files to edit, send the request, and retry if a message fails. Your unsent prompt is kept even if the view reloads.
+
+---
+
+## Commands
 
 Open the Command Palette:
 
 - Windows/Linux: `Ctrl + Shift + P`
 - Mac: `Cmd + Shift + P`
 
-Then use one of the following commands:
+Then use one of the following commands. `Ask AI` and `Preview Changes` are also available from the editor and Explorer context menus.
 
----
+### Codient: Open Chat
+
+Opens the Codient chat view in the sidebar.
 
 ### Codient: Ask AI
 
-Analyze and edit files using AI — applies changes directly with automatic backup.
+Analyze and edit files using AI. Changes are applied directly, with automatic backup.
 
 Use this for:
 - Bug fixing
@@ -53,17 +74,13 @@ Use this for:
 - Optimization suggestions
 - Adding comments or improvements
 
----
-
 ### Codient: Preview Changes
 
-Same as Ask AI but without modifying files — generates a visual HTML diff report that opens automatically in your browser.
+Same as Ask AI but without modifying files, so you can review the suggested changes first.
 
 Use this for:
 - Reviewing AI suggestions before applying
 - Safe exploration of refactoring ideas
-
----
 
 ### Codient: Open Browser Session
 
@@ -74,9 +91,7 @@ Use this for:
 - Manual AI interaction
 - Login-based workflows
 
-> To login with a different profile, first run `Codient: Switch Profile`, then open the browser session.
-
----
+> To log in with a different profile, first run `Codient: Switch Profile`, then open the browser session.
 
 ### Codient: Switch Profile
 
@@ -90,19 +105,38 @@ Use this for:
 - Switching between work and personal accounts
 - Managing multiple AI accounts per model
 
+### Codient: Switch Model
+
+Interactively switch the AI model (Claude, ChatGPT, Gemini, DeepSeek).
+
+### Codient: Set Chat ID / Clear Chat ID / Chat ID Options
+
+Set or clear a chat ID so requests continue in a specific conversation. `Chat ID Options` opens a menu for both actions.
+
 ---
 
-## ⚙️ Settings
+## Settings
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `codient.model` | `default` | AI model to use: `claude`, `chatgpt`, `gemini`, `deepseek` |
-| `codient.proxy` | `` | Proxy address (e.g. `http://127.0.0.1:8080`) |
+| `codient.model` | `Default` | AI model to use: `Default`, `Claude`, `ChatGPT`, `Gemini`, `DeepSeek` |
 | `codient.profile` | `default` | Chrome profile to use. Use `Codient: Switch Profile` to change interactively. |
+| `codient.proxy` | `` | Proxy address (e.g. `http://127.0.0.1:8080` or `socks5://127.0.0.1:1080`). Leave empty to disable. |
+| `codient.codeExtensions` | `.py`, `.js`, `.ts`, `.jsx`, `.tsx`, `.java`, `.cpp`, `.c`, `.go`, `.rs`, `.php`, `.rb`, `.html`, `.css`, `.scss`, `.sass`, `.less`, `.json` | File extensions to include when scanning for code files. |
+| `codient.excludeDirs` | `node_modules`, `.git`, `dist`, `build`, `__pycache__`, `venv`, `env`, `.venv` | Directory names to exclude when scanning for code files. |
+
+To restrict a large project to certain files, override the arrays in your workspace `.vscode/settings.json`:
+
+```json
+{
+  "codient.codeExtensions": [".php"],
+  "codient.excludeDirs": ["vendor", "storage", "node_modules", ".git"]
+}
+```
 
 ---
 
-## 👤 Profiles
+## Profiles
 
 Profiles let you maintain **separate Chrome sessions** for different accounts or purposes.
 
@@ -116,40 +150,20 @@ Each profile is stored under:
 
 ```
 1. Codient: Switch Profile → select "work"
-2. Codient: Open Browser Session → login with work account
-3. Codient: Ask AI → runs with work profile automatically
+2. Codient: Open Browser Session → log in with your work account
+3. Codient: Ask AI → runs with the work profile automatically
 ```
 
-You can have as many profiles as you need — `default`, `work`, `personal`, `client-x`, etc.
+You can have as many profiles as you need: `default`, `work`, `personal`, `client-x`, etc.
 
 ---
 
-## ⚙️ CLI Integration
+## Contributing
 
-This extension acts as a frontend for the Codient Python CLI engine.
-
-Example usage:
-
-```bash
-codient "Fix this code" file1.py file2.py
-codient --profile work --model claude "Refactor this" main.py
-```
+Build and development instructions are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
-## 🛠️ Build & Install
+## License
 
-📦 Install VSCE (one time only)
-```bash
-npm install -g @vscode/vsce
-```
-
-🚀 Build Extension (.vsix package)
-```bash
-vsce package
-```
-
-📥 Install Locally in VSCode
-```bash
-code --install-extension codient-*.vsix
-```
+MIT
