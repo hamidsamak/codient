@@ -103,6 +103,11 @@
       opacity: .5;
       cursor: default;
     }
+    .msgActions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
 
     .response {
       margin-bottom: 10px;
@@ -596,6 +601,19 @@
         btn.addEventListener('click', () => retryMessage(entry));
         d.appendChild(btn);
       }
+      if (entry && entry.actions) {
+        const bar = document.createElement('div');
+        bar.className = 'msgActions';
+        bar.setAttribute('dir', 'ltr');
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'retryBtn';
+        btn.title = 'Reopen the saved chat: a complete last response is applied, a cut-off one is requested again';
+        btn.textContent = '\u21BB Resume';
+        btn.addEventListener('click', () => runResumeAction());
+        bar.appendChild(btn);
+        d.appendChild(bar);
+      }
 
       logEl.appendChild(d);
       scrollToEnd();
@@ -649,6 +667,14 @@
         contextFiles: entry.contextFiles || []
 
       });
+    }
+    function runResumeAction() {
+      if (busy) return;
+      history.forEach(h => { if (h.actions) delete h.actions; });
+      saveState();
+      renderHistory();
+      setBusy(true);
+      vscode.postMessage({ type: 'resume' });
     }
 
     const ALLOWED_TAGS = new Set([
@@ -1094,13 +1120,18 @@
         diffs.forEach(d => addDiffBlock(d.fileName, d.action, d.text));
         if (!html && diffs.length === 0) addLine('No changes were made.');
         // The request is finished: reset the manually selected files
-        editFiles = [];
-        contextFiles = [];
-        renderChips();
+        if (!msg.resumed) {
+          editFiles = [];
+          contextFiles = [];
+          renderChips();
+        }
         saveState();
       } else if (msg.type === 'error') {
-        markLastUserMessageFailed();
+        if (!msg.noRetry) markLastUserMessageFailed();
         addLine('Error: ' + msg.text, 'error');
+        if (msg.resumable) {
+          addLine('The browser was closed during the request. If Codient asks to save the chat ID, accept it first, then press Resume:', 'note', { actions: true });
+        }
       } else if (msg.type === 'note') {
         addLine(msg.text, 'note');
       } else if (msg.type === 'focusPrompt') {

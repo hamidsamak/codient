@@ -479,6 +479,11 @@ async function runTaskInExtension({ question, selectedFiles, contextFiles, works
       await vscode.env.openExternal(vscode.Uri.file(reportPath));
     },
   });
+  if (result && result.lastResponseHash && (result.writtenFiles || []).length) {
+    const appliedMap = extensionContext.workspaceState.get('codient.lastAppliedResponse', {});
+    appliedMap[modelKey] = result.lastResponseHash;
+    await extensionContext.workspaceState.update('codient.lastAppliedResponse', appliedMap);
+  }
 
   return result;
 }
@@ -506,6 +511,8 @@ function activate(context) {
 
     chatProvider.focusPrompt();
   }));
+
+  context.subscriptions.push(vscode.commands.registerCommand('codient.resume', () => chatProvider.runResumeCommand()));
 
   // Command 1: Ask — always overwrites
   context.subscriptions.push(vscode.commands.registerCommand('codient.ask', async () => {

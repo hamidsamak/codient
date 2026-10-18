@@ -8,6 +8,7 @@ const core = require('./core');
 const { getOpenEditorFiles } = require('./editorFiles');
 
 const CHAT_IDS_STATE_KEY = 'codient.chatIds';
+const APPLIED_HASH_STATE_KEY = 'codient.lastAppliedResponse';
 
 class ChatViewProvider {
   constructor(context, options = {}) {
@@ -42,6 +43,8 @@ class ChatViewProvider {
           await this.handlePickFiles(msg);
         } else if (msg.type === 'saveHtml') {
           await this.handleSaveHtml(msg);
+        } else if (msg.type === 'resume') {
+          await this.handleResume();
         } else if (msg.type === 'ready') {
           this.ready = true;
           this.pushActiveFile();
@@ -216,6 +219,7 @@ class ChatViewProvider {
       });
 
       chatInfo = result.chat || null;
+      await this.rememberApplied(modelKey, result);
 
       if (result.success) {
         const diffs = (result.diffs || []).map(([fileName, diffLines, action]) => ({
@@ -233,6 +237,7 @@ class ChatViewProvider {
         this.post({
           type: 'error',
           text: result.error || 'The request failed. See the Codient output panel for details.',
+          resumable: Boolean(result.browserClosed),
         });
       }
     } finally {
@@ -248,6 +253,130 @@ class ChatViewProvider {
         this.onLog(`⚠️ Chat ID sync failed: ${e.message}`);
       }
     }
+  }
+  getAppliedMap() {
+    return this.context.workspaceState.get(APPLIED_HASH_STATE_KEY, {});
+  }
+
+  async rememberApplied(modelKey, result) {
+    if (!result || !result.lastResponseHash) return;
+    if (!(result.writtenFiles || []).length) return;
+    const map = this.getAppliedMap();
+    map[modelKey] = result.lastResponseHash;
+    await this.context.workspaceState.update(APPLIED_HASH_STATE_KEY, map);
+  }
+
+  async whenReady(timeoutMs = 5000) {
+    const deadline = Date.now() + timeoutMs;
+    while (!(this.view && this.ready) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
+  async runResumeCommand() {
+    try {
+      await vscode.commands.executeCommand('codient.chatView.focus');
+      await this.whenReady();
+      await this.handleResume();
+    } catch (e) {
+      this.post({ type: 'error', text: e.message, noRetry: true });
+      if (!this.busy) this.post({ type: 'busy', value: false });
+
+    }
+  }
+
+  runResume(modelKey, chatId, cwd, skipHash) {
+    return core.resumeTask({
+      model: modelKey,
+      chatId,
+      profile: this.getConfig('profile', 'default'),
+      proxy: this.getConfig('proxy', '') || null,
+      skipHash,
+      cwd,
+      overwrite: true,
+      nonInteractive: true,
+      onLog: (line) => this.onLog(line),
+    });
+  }
+
+  async handleResume() {
+
+    if (this.busy) {
+      this.post({ type: 'error', text: 'A request is already running. Please wait for it to finish.', noRetry: true });
+      return;
+    }
+
+    const cwd = this.getWorkspaceRoot();
+    if (!cwd) {
+      this.post({ type: 'error', text: 'Please open a workspace.', noRetry: true });
+      this.post({ type: 'busy', value: false });
+      return;
+    }
+
+
+    const modelKey = this.getEffectiveModelKey();
+    const chatId = this.getChatIdsMap()[modelKey] || null;
+    if (!chatId) {
+      this.post({
+        type: 'error',
+        text: 'No saved chat ID for the current model. Save the chat ID first (or set it from the status bar), then try again.',
+        noRetry: true,
+      });
+      this.post({ type: 'busy', value: false });
+      return;
+    }
+
+    this.busy = true;
+    this.post({ type: 'busy', value: true });
+    this.post({
+      type: 'note',
+      text: '↻ Reopening the chat and continuing from the last response…',
+    });
+
+    try {
+      let result = await this.runResume(modelKey, chatId, cwd, this.getAppliedMap()[modelKey] || null);
+
+      if (result.alreadyApplied) {
+        const choice = await vscode.window.showWarningMessage(
+          'The last response in this chat was already applied. Applying it again may corrupt the files. Apply anyway?',
+          'Apply anyway',
+          'Cancel'
+        );
+        if (choice !== 'Apply anyway') {
+
+          this.post({ type: 'note', text: 'ℹ️ The last response was already applied — nothing to do.' });
+          return;
+        }
+        result = await this.runResume(modelKey, chatId, cwd, null);
+      }
+
+      if (result.success) {
+        const diffs = (result.diffs || []).map(([fileName, diffLines, action]) => ({
+          fileName,
+          action,
+          text: Array.isArray(diffLines) ? diffLines.join('\n') : String(diffLines),
+        }));
+        this.post({
+          type: 'done',
+          resumed: true,
+          explanationHtml: result.explanationHtml || '',
+          writtenFiles: (result.writtenFiles || []).map((f) => f.fileName),
+          diffs,
+        });
+        await this.rememberApplied(modelKey, result);
+      } else {
+        this.post({
+          type: 'error',
+          noRetry: true,
+          text: result.error || 'Resume failed. See the Codient output panel for details.',
+          resumable: Boolean(result.browserClosed),
+        });
+      }
+    } finally {
+      this.busy = false;
+      this.post({ type: 'busy', value: false });
+    }
+
   }
 
   async handleSaveHtml(msg) {

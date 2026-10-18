@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { readFile, writeFile, ensureDir, parseHunks, applyHunks } = require('./fileOps');
 const { formatTimestamp, unifiedDiffLines, generateDiffHtml } = require('./backup');
 const { MODEL_CONFIG } = require('./modelConfig');
@@ -35,6 +36,35 @@ async function extractExplanationHtml(responseEl) {
   } catch {
     return '';
   }
+}
+async function analyzeLastResponse(page, model) {
+  const config = MODEL_CONFIG[model];
+  const els = await page.$$(config.response_selector);
+  if (els.length === 0) return { state: 'none', hash: null };
+
+  const last = els[els.length - 1];
+  const text = await last.innerText();
+  const hash = crypto.createHash('md5').update(text, 'utf8').digest('hex');
+
+  const opens = (text.match(/^\s*<file\s/gm) || []).length;
+  const closes = (text.match(/<\/file>\s*$/gm) || []).length;
+  const hasCommands = [...text.matchAll(RUN_COMMAND_RE)].length > 0;
+
+
+  let state;
+  if (opens > 0) {
+    state = opens > closes ? 'incomplete' : 'files';
+  } else if (/<need_more_info/.test(text)) {
+    state = NEED_MORE_INFO_RE.test(text) ? 'need_more_info' : 'incomplete';
+  } else if (/<run_command/.test(text)) {
+    state = hasCommands ? 'run_command' : 'incomplete';
+  } else {
+    const blocks = await last.$$('pre');
+    const endsCleanly = /[.!?؟。:)\]`"'»”*…]\s*$/.test(text.trim());
+    state = blocks.length === 0 && !endsCleanly ? 'incomplete' : 'text';
+  }
+
+  return { state, hash };
 }
 
 async function processResponse(page, model, options) {
@@ -182,4 +212,4 @@ async function processResponse(page, model, options) {
   }
 }
 
-module.exports = { processResponse };
+module.exports = { processResponse, analyzeLastResponse };

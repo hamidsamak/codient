@@ -63,6 +63,10 @@
       {
         "command": "codient.openChat",
         "title": "Codient: Open Chat"
+      },
+      {
+        "command": "codient.resume",
+        "title": "Codient: Resume Interrupted Task"
       }
     ],
     "menus": {

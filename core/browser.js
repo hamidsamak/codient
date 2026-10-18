@@ -264,9 +264,15 @@ async function sendFollowUp(page, model, extraFilesContent, { debug = false, deb
     onLog(`🐛 Debug: Follow-up prompt saved`);
   }
 
-  let payload = followUp;
+  return submitText(page, model, followUp, { onLog, label: 'Follow-up' });
+}
+
+async function submitText(page, model, text, { onLog = () => {}, label = 'Message' } = {}) {
+  const config = MODEL_CONFIG[model];
+
+  let payload = text;
   if (model === 'claude' || model === 'chatgpt') {
-    payload = followUp
+    payload = text
       .split(/\r\n|\r|\n/)
       .map((line) => `<p>${escapeHtmlLine(line)}</p>`)
       .join('\n');
@@ -283,11 +289,12 @@ async function sendFollowUp(page, model, extraFilesContent, { debug = false, deb
 
   const sendButtons = await page.$$(config.send_selector);
   if (sendButtons.length === 0) {
-    onLog('❌ Send button not found for follow-up!');
+    onLog(`❌ Send button not found for ${label.toLowerCase()}!`);
     return false;
   }
   await sendButtons[config.send_index].click();
-  onLog('📨 Follow-up sent, waiting for response...');
+
+  onLog(`📨 ${label} sent, waiting for response...`);
 
   await sleep(2000);
   await waitForGenerationDone(page, config);
@@ -304,4 +311,5 @@ module.exports = {
   waitForNewResponse,
   sendPrompt,
   sendFollowUp,
+  submitText,
 };
