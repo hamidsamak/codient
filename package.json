@@ -1,7 +1,7 @@
 {
   "name": "codient",
   "displayName": "Codient",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "AI coding assistant for VS Code with multi-model support (Claude, ChatGPT, Gemini, DeepSeek) and multi-file workflows.",
   "publisher": "hamidsamak",
   "author": "Hamid Samak",
