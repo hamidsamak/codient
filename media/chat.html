@@ -75,6 +75,13 @@
       color: var(--vscode-errorForeground);
     }
 
+    .msg.note {
+      color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+      padding: 2px 8px;
+      font-size: 11px;
+      border-inline-start: 3px solid var(--vscode-editorWarning-foreground, #cca700);
+    }
+
     .retryBtn {
       display: block;
       margin-top: 4px;
@@ -948,6 +955,7 @@
         '.msg{margin:10px 0;white-space:pre-wrap}',
         '.msg.user{padding:6px 10px;border-inline-start:3px solid #0969da;background:#f0f6ff}',
         '.msg.error{color:#c62828}',
+        '.msg.note{color:#57606a;padding:4px 10px;border-inline-start:3px solid #bf8700}',
 
         '.response{margin:10px 0}',
         '.response pre,.diffBody{background:#f6f8fa;padding:8px;overflow-x:auto;border-radius:4px;font-family:ui-monospace,Consolas,monospace;font-size:12px}',
@@ -1093,6 +1101,8 @@
       } else if (msg.type === 'error') {
         markLastUserMessageFailed();
         addLine('Error: ' + msg.text, 'error');
+      } else if (msg.type === 'note') {
+        addLine(msg.text, 'note');
       } else if (msg.type === 'focusPrompt') {
         promptEl.focus();
       }

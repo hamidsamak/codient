@@ -134,6 +134,10 @@ async function clearChatIdForModel(modelKey) {
   await extensionContext.workspaceState.update(CHAT_IDS_STATE_KEY, map);
   updateChatIdStatusBar();
 }
+async function clearAllChatIds() {
+  await extensionContext.workspaceState.update(CHAT_IDS_STATE_KEY, {});
+  updateChatIdStatusBar();
+}
 
 function parseChatIdInput(rawInput, modelKey) {
   const text = (rawInput || '').trim();
@@ -261,6 +265,30 @@ async function pickProfile() {
   }
 
   return picked.label;
+}
+
+async function handleProfileSwitchChatIds(chatProvider, previousProfile, newProfile) {
+  const saved = getChatIdsMap();
+  const hasSavedChat = Object.keys(saved).some(key => saved[key]);
+  if (!hasSavedChat) return;
+
+  const choice = await vscode.window.showWarningMessage(
+    `👤 Profile switched to "${newProfile}". Your saved chat ID belongs to the previous profile ("${previousProfile}") and may not be accessible from this account. Start a new chat?`,
+    'Start new chat',
+    'Keep chat ID'
+  );
+
+  if (choice === 'Start new chat') {
+    await clearAllChatIds();
+    chatProvider.addNote(
+      `👤 Profile switched to "${newProfile}". The saved chat ID was cleared — your next message will start a new chat.`
+    );
+  } else {
+    chatProvider.addNote(
+      `👤 Profile switched to "${newProfile}". The saved chat ID was kept — if it is not accessible with this profile, Codient will start a new chat automatically.`
+
+    );
+  }
 }
 
 
@@ -556,12 +584,20 @@ function activate(context) {
 
   // Command 4: Switch Profile
   context.subscriptions.push(vscode.commands.registerCommand('codient.switchProfile', async () => {
+    const previousProfile = getCurrentProfile();
     const selected = await pickProfile();
     if (!selected) return;
+
+    if (selected === previousProfile) {
+      vscode.window.showInformationMessage(`👤 Codient is already using profile: ${selected}`);
+      return;
+    }
 
     const config = vscode.workspace.getConfiguration('codient');
     await config.update('profile', selected, vscode.ConfigurationTarget.Global);
     vscode.window.showInformationMessage(`👤 Codient profile switched to: ${selected}`);
+
+    await handleProfileSwitchChatIds(chatProvider, previousProfile, selected);
   }));
 
   // Command 5: Switch Model

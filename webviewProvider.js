@@ -19,6 +19,7 @@ class ChatViewProvider {
     this.activeEditorListenerRegistered = false;
     this.ready = false;
     this.pendingFocus = false;
+    this.pendingNotes = [];
   }
 
   resolveWebviewView(webviewView) {
@@ -45,6 +46,7 @@ class ChatViewProvider {
           this.ready = true;
           this.pushActiveFile();
           this.flushFocus();
+          this.flushNotes();
         }
       } catch (e) {
         this.post({ type: 'error', text: e.message });
@@ -75,6 +77,18 @@ class ChatViewProvider {
 
       this.pendingFocus = false;
       this.view.webview.postMessage({ type: 'focusPrompt' });
+    }
+  }
+
+  addNote(text) {
+    this.pendingNotes.push(String(text));
+    this.flushNotes();
+  }
+
+  flushNotes() {
+    if (!this.view || !this.ready) return;
+    while (this.pendingNotes.length > 0) {
+      this.view.webview.postMessage({ type: 'note', text: this.pendingNotes.shift() });
     }
   }
 
