@@ -15,6 +15,22 @@ const GIT_ALLOWED_SUBCOMMANDS = new Set([
 ]);
 
 const GIT_FLAGS_ONLY_SUBCOMMANDS = new Set(['branch', 'remote']);
+const GIT_SAFE_FLAGS_FOR_FLAGS_ONLY = new Set([
+  '-a', '-r', '-v', '-vv', '-l',
+  '--all', '--remotes', '--verbose', '--list', '--show-current',
+]);
+
+const GIT_FORBIDDEN_FLAGS = [
+  '--output', '--ext-diff', '--exec', '--open-files-in-pager',
+  '--upload-pack', '--receive-pack',
+];
+
+function isForbiddenGitFlag(arg) {
+  if (!arg.startsWith('--')) return false;
+  const name = arg.split('=')[0];
+  if (name.length < 3) return false;
+  return GIT_FORBIDDEN_FLAGS.some((f) => f.startsWith(name));
+}
 
 const FORBIDDEN_FIND_ARGS = new Set([
   '-exec', '-execdir', '-ok', '-okdir', '-delete',
@@ -25,8 +41,12 @@ const MAX_COMMANDS_PER_ROUND = 10;
 const MAX_OUTPUT_CHARS = 20000;
 const TIMEOUT_MS = 15000;
 
-const FORBIDDEN_UNQUOTED = new Set([';', '&', '<', '>', '`', '$', '(', ')', '\n', '\r', '\\']);
-const FORBIDDEN_DOUBLE_QUOTED = new Set(['$', '`', '\\']);
+const FORBIDDEN_UNQUOTED = new Set([';', '&', '<', '>', '$', '(', ')', '\n', '\r', '\\']);
+const SMART_SINGLE = '‘’‚‛';
+const SMART_DOUBLE = '“”„‟';
+const WORD_CHAR = /[\p{L}\p{N}_]/u;
+
+const SAFE_UNQUOTED = /[A-Za-z0-9_\-.,:=\/@%+*?\[\]]/;
 
 function unescapeEntities(s) {
   return s
@@ -38,43 +58,61 @@ function unescapeEntities(s) {
 
 }
 
+function openQuote(ch, prev) {
+  if (ch === "'" || ch === '"') return { closers: ch, smart: false };
+  if (prev !== undefined && WORD_CHAR.test(prev)) return null;
+  if (SMART_SINGLE.includes(ch)) return { closers: SMART_SINGLE, smart: true };
+  if (SMART_DOUBLE.includes(ch)) return { closers: SMART_DOUBLE, smart: true };
+  if (ch === '`') return { closers: '`', smart: false };
+  return null;
+}
+
+function closesQuote(quote, ch, next) {
+  if (!quote.closers.includes(ch)) return false;
+  return !quote.smart || next === undefined || !WORD_CHAR.test(next);
+}
+
 // Splits a command line into pipeline segments, each an array of tokens.
 // Throws an Error if forbidden shell syntax is found.
 function parsePipeline(cmd) {
   const segments = [];
   let tokens = [];
   let cur = '';
+
+  let shell = '';
   let hasToken = false;
-  let quoted = false;
-  let state = 'none'; // none | single | double
+  let quote = null;
 
   const pushToken = () => {
-    if (hasToken) tokens.push({ text: cur, quoted });
+    if (hasToken) tokens.push({ text: cur, shell });
     cur = '';
+    shell = '';
     hasToken = false;
-    quoted = false;
   };
 
   for (let i = 0; i < cmd.length; i++) {
     const ch = cmd[i];
 
-    if (state === 'single') {
-      if (ch === "'") state = 'none';
-      else cur += ch;
+    if (quote) {
+      if (closesQuote(quote, ch, cmd[i + 1])) {
+        shell += "'";
+        quote = null;
+      } else {
+        cur += ch;
+        shell += ch === "'" ? "'\\''" : ch;
+      }
       continue;
     }
 
-    if (state === 'double') {
-      if (ch === '"') { state = 'none'; continue; }
-      if (FORBIDDEN_DOUBLE_QUOTED.has(ch)) throw new Error(`character "${ch}" is not allowed inside double quotes (use single quotes)`);
-      cur += ch;
-
+    const opened = openQuote(ch, cmd[i - 1]);
+    if (opened) {
+      quote = opened;
+      hasToken = true;
+      shell += "'";
       continue;
     }
 
-    // state === 'none'
-    if (ch === "'") { state = 'single'; hasToken = true; quoted = true; continue; }
-    if (ch === '"') { state = 'double'; hasToken = true; quoted = true; continue; }
+
     if (ch === '|') {
       if (cmd[i + 1] === '|') throw new Error('"||" is not allowed');
       pushToken();
@@ -86,10 +124,11 @@ function parsePipeline(cmd) {
     if (FORBIDDEN_UNQUOTED.has(ch)) throw new Error(`character "${ch === '\n' ? '\\n' : ch}" is not allowed outside quotes`);
     if (/\s/.test(ch)) { pushToken(); continue; }
     cur += ch;
+    shell += SAFE_UNQUOTED.test(ch) ? ch : `'${ch}'`;
     hasToken = true;
   }
 
-  if (state !== 'none') throw new Error('unterminated quote');
+  if (quote) throw new Error('unterminated quote');
   pushToken();
   if (tokens.length === 0) throw new Error('empty command');
   segments.push(tokens);
@@ -105,6 +144,7 @@ function checkPathToken(text, cwd) {
     const root = path.resolve(cwd);
     const inside = resolved === root || resolved.startsWith(root + path.sep);
     if (!inside && fs.existsSync(resolved)) throw new Error(`path "${text}" is outside the project`);
+
   }
 }
 
@@ -126,7 +166,7 @@ function validateSegment(tokens, cwd) {
     let hasN = false;
     for (const t of args) {
       const a = t.text;
-      if (!t.quoted && a.startsWith('-')) {
+      if (a.startsWith('-')) {
         if (a === '--in-place' || a.startsWith('--in-place=')) throw new Error('sed in-place editing is not allowed');
         if (!a.startsWith('--') && /^-[a-zA-Z]*i/.test(a)) throw new Error('sed -i is not allowed');
         if (a === '-n' || a === '--quiet' || a === '--silent' || (!a.startsWith('--') && /^-[a-zA-Z]*n/.test(a))) hasN = true;
@@ -137,14 +177,22 @@ function validateSegment(tokens, cwd) {
 
   }
 
+
   if (name === 'git') {
-    if (args.length === 0) throw new Error('git requires a read-only subcommand (e.g. status, diff, log)');
-    const sub = args[0].text;
+    let subIdx = 0;
+    while (subIdx < args.length && args[subIdx].text === '--no-pager') subIdx++;
+    if (subIdx >= args.length) throw new Error('git requires a read-only subcommand (e.g. git --no-pager status, git --no-pager diff, git --no-pager log)');
+    const sub = args[subIdx].text;
     if (!GIT_ALLOWED_SUBCOMMANDS.has(sub)) throw new Error(`git subcommand "${sub}" is not in the read-only allowlist`);
+    const subArgs = args.slice(subIdx + 1);
+    for (const t of subArgs) {
+      if (isForbiddenGitFlag(t.text)) throw new Error(`git flag "${t.text}" is not allowed (it can write files or run external programs)`);
+    }
+
     if (GIT_FLAGS_ONLY_SUBCOMMANDS.has(sub)) {
-      for (const t of args.slice(1)) {
-        if (!t.text.startsWith('-')) {
-          throw new Error(`git ${sub} with argument "${t.text}" is not allowed (only flags like -v/-a are permitted, since a positional argument here can create or modify state)`);
+      for (const t of subArgs) {
+        if (!GIT_SAFE_FLAGS_FOR_FLAGS_ONLY.has(t.text)) {
+          throw new Error(`git ${sub} with argument "${t.text}" is not allowed (only read-only flags like -a/-r/-v/--list are permitted, since other arguments can create or modify state)`);
         }
       }
     }
@@ -153,7 +201,13 @@ function validateSegment(tokens, cwd) {
 
 function validateCommand(cmd, cwd) {
   const segments = parsePipeline(cmd);
+  for (const seg of segments) {
+    if (seg[0].text === 'git' && !(seg[1] && seg[1].text === '--no-pager')) {
+      seg.splice(1, 0, { text: '--no-pager', shell: '--no-pager' });
+    }
+  }
   for (const seg of segments) validateSegment(seg, cwd);
+  return segments.map((seg) => seg.map((t) => t.shell).join(' ')).join(' | ');
 }
 
 function runShell(cmd, cwd) {
@@ -168,6 +222,7 @@ function runShell(cmd, cwd) {
 
 function truncate(text) {
   if (text.length <= MAX_OUTPUT_CHARS) return text;
+
   return text.slice(0, MAX_OUTPUT_CHARS) + `\n... [output truncated: ${text.length - MAX_OUTPUT_CHARS} more characters]`;
 }
 
@@ -184,21 +239,23 @@ async function executeCommands(commands, cwd, { onLog = () => { } } = {}) {
     const command = unescapeEntities(item.command).trim();
     onLog(`   $ ${command}`);
 
+    let shellCommand;
     try {
-      validateCommand(command, cwd);
+      shellCommand = validateCommand(command, cwd);
     } catch (e) {
       onLog(`   ❌ Rejected: ${e.message}`);
       results.push({ command, text: `$ ${command}\n[REJECTED] ${e.message}\n` });
       continue;
     }
 
-    const { code, stdout, stderr } = await runShell(command, cwd);
+    const { code, stdout, stderr } = await runShell(shellCommand, cwd);
     let text = `$ ${command}\n[exit code: ${code}]\n`;
     if (stdout) text += `${truncate(stdout)}\n`;
     else text += '(no output)\n';
     if (stderr) text += `[stderr]\n${truncate(stderr)}\n`;
     onLog(`   ✅ Done (exit ${code}, ${stdout.length} chars)`);
     results.push({ command, text });
+
   }
 
   return results;

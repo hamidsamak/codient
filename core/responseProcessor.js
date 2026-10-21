@@ -8,7 +8,7 @@ const { formatTimestamp, unifiedDiffLines, generateDiffHtml } = require('./backu
 const { MODEL_CONFIG } = require('./modelConfig');
 
 const NEED_MORE_INFO_RE = /<need_more_info\s+reason="([^"]+)"\s+files="([^"]+)"\s*\/?>/;
-const RUN_COMMAND_RE = /<run_command\s+reason="([^"]*)"\s+command="([^"]+)"\s*\/?>/g;
+const RUN_COMMAND_RE = /<run_command\s+reason="(.*?)"\s+command="(.+?)"\s*\/?>/g;
 const FILE_TAG_RE = /<file\s+name="(?<name>[^"]+)"\s+path="(?<path>[^"]+)"(?:\s+action="(?<action>[^"]+)")?[^>]*>\s*(?:<!\[CDATA\[)?(?<content>.*?)(?:\]\]>)?\s*<\/file>/gs;
 
 async function extractExplanationHtml(responseEl) {
